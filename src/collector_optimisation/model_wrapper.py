@@ -23,6 +23,7 @@ import random
 from contextlib import contextmanager
 from typing import Any, Generator
 
+import pandas as pd
 import yaml
 
 from pvt_model import main, SystemData
@@ -51,6 +52,9 @@ def temporary_collector_file(
 
     :param: updates_to_collector_design_parameters
         A mapping between named design parameters and values to update them with.
+
+    :param: unique_id
+        A unique ID for the run.
 
     :yields: The path to the temporary file.
 
@@ -107,8 +111,74 @@ def temporary_collector_file(
             ),
             "w",
             encoding="UTF-8",
-        ) as temporary_collector_file:
-            yaml.dump(base_collector_data, filename)
+        ) as temp_file:
+            yaml.dump(base_collector_data, temp_file)
+
+        yield filename
+
+    finally:
+        try:
+            os.remove(filename)
+        except FileNotFoundError:
+            pass
+
+
+@contextmanager
+def temporary_steady_state_file(
+    base_steady_state_filepath: str,
+    mass_flow_rate: float,
+    solar_irradiance_data: list[float],
+    temperature_data: list[float],
+    wind_speed_data: list[float],
+    unique_id: int = random.randint(0, MAX_PARALLEL_RUNS),
+) -> Generator[str, None, None]:
+    """
+    Create and return the path to a temporary steady-state file.
+
+    :param: base_steady_state_filepath
+        The path to the steady-state file on which to base the run.
+
+    :param: mass_flow_rate
+        The mass flow rate to use for this run.
+
+    :param: solar_irradiance_data
+        The solar-irradiance data to use for the run.
+
+    :param: temperature_data
+        The temperature data for the run.
+
+    :param: wind_speed_data
+        The wind-speed data for the run.
+
+    :param: unique_id
+        A unique ID for the run.
+
+    """
+
+    with open(base_steady_state_filepath, "r", encoding="UTF-8") as steady_state_file:
+        base_steady_state_data = yaml.safe_load(steady_state_file)
+
+    # Assert that all input data is of the same length.
+    assert len(solar_irradiance_data) == len(temperature_data) == len(wind_speed_data)
+
+    # Generate a dataframe to contain the information.
+    data_frame = pd.DataFrame(
+        {"irradiance": solar_irradiance_data, "ambient_temperature": temperature_data, "wind_speed": wind_speed_data, mass_flow_rate: [mass_flow_rate] * len(wind_speed_data), "collector_input_temperature": [base_steady_state_data["collector_input_temperature"]] * len(wind_speed_data)}
+    )
+
+    # Save these data to a temporary file
+    try:
+        with open(
+            (
+                filename := os.path.join(
+                    TEMPORARY_FILE_DIRECTORY,
+                    f"{os.path.basename(base_steady_state_filepath)}_{unique_id}",
+                )
+            ),
+            "w",
+            encoding="UTF-8",
+        ) as temp_file:
+            data_frame.to_csv(temp_file)
 
         yield filename
 
@@ -307,29 +377,47 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         return main(self.model_args)
 
-    def fitness_function(self, mass_flow_rate: float, **kwargs) -> float:
+    def fitness_function(self, mass_flow_rate: float, run_number: int, run_weightings: list[float], solar_irradiance_data: list[float], temperature_data: list[float], wind_speed_data: list[float], **kwargs) -> float:
         """
         Fitness function to assess the fitness of the model.
-
-        Design Parameters:
-            These are passed in with the kwargs parameters and determined based on this.
 
         Operation Parameters:
             :param: mass_flow_rate
                 The mass flow rate through the collector.
+
+        :param: run_number
+            The run number.
+
+        :param: run_weightings
+            The weightings to use for each result of the run.
+
+        :param: solar_irradiance_data
+            The solar-irradiance data to use for the run.
+
+        :param: temperature_data
+            The temperature data for the run.
+
+        :param: wind_speed_data
+            The wind-speed data for the run.
+
+        Design Parameters:
+            These are passed in with the kwargs parameters and determined based on this.
 
         :returns: The fitness of the model.
 
         """
 
         # Make temporary files as needed based on the inputs for the run.
+        with temporary_collector_file(self.base_pvt_filepath, kwargs, run_number) as temp_pvt_filepath:
+            with temporary_steady_state_file(self.base_steady_state_filepath, mass_flow_rate, solar_irradiance_data, temperature_data, wind_speed_data, run_number) as temp_steady_state_filepath:
+            # Run the model.
+                output_data = self._run_model(temp_pvt_filepath, temp_steady_state_filepath)
 
-        # Run the model.
-        self._run_model(temporary_pvt_filepath, temporary_steady_state_filepath)
+        # Use the run weights for each of the runs that were returned.
+
 
         # Assess the fitness of the results and return.
         return self.weighting_calculator.get_weighted_fitness(
             electrical_fitness, thermal_fitness
         )
 
-        # Ensure temporary files are deleted.
