@@ -19,6 +19,7 @@ from bayes_opt import BayesianOptimization
 
 from .model_wrapper import PVTModelAssessor
 
+
 class BayesianPVTModelOptimiser(BayesianOptimization):
     """
     Runs a Bayesian optimisation the PVTModel.

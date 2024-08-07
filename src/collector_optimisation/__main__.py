@@ -18,6 +18,7 @@ import sys
 
 from typing import Any
 
+
 def _parse_args(args: list[Any]) -> argparse.Namespace:
     """
     Parses command-line arguments into a :class:`argparse.NameSpace`.
@@ -33,6 +34,7 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
 
     return parser.parse_args(args)
 
+
 def _parse_files() -> None:
     """
     Parse the input files needed to run the model.
@@ -40,6 +42,7 @@ def _parse_files() -> None:
     """
 
     pass
+
 
 def main(unparsed_args: list[Any]) -> None:
     """
@@ -62,6 +65,7 @@ def main(unparsed_args: list[Any]) -> None:
     # Save the results and display the outputs.
 
     pass
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
