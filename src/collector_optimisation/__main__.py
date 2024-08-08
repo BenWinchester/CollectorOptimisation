@@ -43,6 +43,8 @@ WEATHER_DIRECTORY: str = "weather_data"
 # WIND_FILENAME:
 #   The name of the wind filename.
 WIND_FILENAME: str = "ninja_wind_{lat:.4f}_{lon:.4f}_uncorrected.csv"
+
+
 @dataclass
 class Location:
     """
@@ -69,7 +71,6 @@ class Location:
 
         return self.lat
 
-
     @property
     def longitude(self) -> float:
         """Another name for the longitude."""
@@ -79,7 +80,11 @@ class Location:
     def __eq__(self, other) -> bool:
         """Two locations are equal if they are at the same coordinates."""
 
-        return self.name == other.name and self.latitude == other.latitude and self.longitude == other.longitude
+        return (
+            self.name == other.name
+            and self.latitude == other.latitude
+            and self.longitude == other.longitude
+        )
 
 
 def _parse_args(args: list[Any]) -> argparse.Namespace:
@@ -95,7 +100,9 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-l", "--location", help="The name of the location to consider.", type=str)
+    parser.add_argument(
+        "-l", "--location", help="The name of the location to consider.", type=str
+    )
 
     return parser.parse_args(args)
 
@@ -110,12 +117,16 @@ def _parse_files(location_name: str) -> None:
     """
 
     # Parse the location inputs.
-    with open(os.path.join(INPUT_FILES_DIRECTORY, LOCATIONS_FILENAME), "r", encoding="UTF-8") as locations_file:
+    with open(
+        os.path.join(INPUT_FILES_DIRECTORY, LOCATIONS_FILENAME), "r", encoding="UTF-8"
+    ) as locations_file:
         locations = [Location(**entry) for entry in yaml.safe_load(locations_file)]
 
     # Attempt to determine the location.
     try:
-        location = [location for location in locations if location.name == location_name][0]
+        location = [
+            location for location in locations if location.name == location_name
+        ][0]
     except IndexError:
         raise
 
@@ -124,10 +135,26 @@ def _parse_files(location_name: str) -> None:
     pdb.set_trace()
 
     # Parse the solar and wind files for the location specified.
-    with open(os.path.join(INPUT_FILES_DIRECTORY, WEATHER_DIRECTORY, SOLAR_FILENAME.format(lat=location.lat, lon=location.lon)), "r", encoding="UTF-8") as solar_file:
+    with open(
+        os.path.join(
+            INPUT_FILES_DIRECTORY,
+            WEATHER_DIRECTORY,
+            SOLAR_FILENAME.format(lat=location.lat, lon=location.lon),
+        ),
+        "r",
+        encoding="UTF-8",
+    ) as solar_file:
         solar_data = pd.read_csv(solar_file)
 
-    with open(os.path.join(INPUT_FILES_DIRECTORY, WEATHER_DIRECTORY, WIND_FILENAME.format(lat=location.lat, lon=location.lon)), "r", encoding="UTF-8") as wind_file:
+    with open(
+        os.path.join(
+            INPUT_FILES_DIRECTORY,
+            WEATHER_DIRECTORY,
+            WIND_FILENAME.format(lat=location.lat, lon=location.lon),
+        ),
+        "r",
+        encoding="UTF-8",
+    ) as wind_file:
         wind_data = pd.read_csv(wind_file)
 
     # Combine the two dataframes
@@ -135,7 +162,6 @@ def _parse_files(location_name: str) -> None:
     combined_weather_data["wind_speed"] = wind_data["wind_speed"]
 
     # Process the weather data to find unique values.
-
 
 
 def main(unparsed_args: list[Any]) -> None:

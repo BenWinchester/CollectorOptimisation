@@ -163,7 +163,16 @@ def temporary_steady_state_file(
 
     # Generate a dataframe to contain the information.
     data_frame = pd.DataFrame(
-        {"irradiance": solar_irradiance_data, "ambient_temperature": temperature_data, "wind_speed": wind_speed_data, mass_flow_rate: [mass_flow_rate] * len(wind_speed_data), "collector_input_temperature": [base_steady_state_data["collector_input_temperature"]] * len(wind_speed_data)}
+        {
+            "irradiance": solar_irradiance_data,
+            "ambient_temperature": temperature_data,
+            "wind_speed": wind_speed_data,
+            mass_flow_rate: [mass_flow_rate] * len(wind_speed_data),
+            "collector_input_temperature": [
+                base_steady_state_data["collector_input_temperature"]
+            ]
+            * len(wind_speed_data),
+        }
     )
 
     # Save these data to a temporary file
@@ -377,7 +386,16 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         return main(self.model_args)
 
-    def fitness_function(self, mass_flow_rate: float, run_number: int, run_weightings: list[float], solar_irradiance_data: list[float], temperature_data: list[float], wind_speed_data: list[float], **kwargs) -> float:
+    def fitness_function(
+        self,
+        mass_flow_rate: float,
+        run_number: int,
+        run_weightings: list[float],
+        solar_irradiance_data: list[float],
+        temperature_data: list[float],
+        wind_speed_data: list[float],
+        **kwargs,
+    ) -> float:
         """
         Fitness function to assess the fitness of the model.
 
@@ -408,16 +426,25 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         """
 
         # Make temporary files as needed based on the inputs for the run.
-        with temporary_collector_file(self.base_pvt_filepath, kwargs, run_number) as temp_pvt_filepath:
-            with temporary_steady_state_file(self.base_steady_state_filepath, mass_flow_rate, solar_irradiance_data, temperature_data, wind_speed_data, run_number) as temp_steady_state_filepath:
-            # Run the model.
-                output_data = self._run_model(temp_pvt_filepath, temp_steady_state_filepath)
+        with temporary_collector_file(
+            self.base_pvt_filepath, kwargs, run_number
+        ) as temp_pvt_filepath:
+            with temporary_steady_state_file(
+                self.base_steady_state_filepath,
+                mass_flow_rate,
+                solar_irradiance_data,
+                temperature_data,
+                wind_speed_data,
+                run_number,
+            ) as temp_steady_state_filepath:
+                # Run the model.
+                output_data = self._run_model(
+                    temp_pvt_filepath, temp_steady_state_filepath
+                )
 
         # Use the run weights for each of the runs that were returned.
-
 
         # Assess the fitness of the results and return.
         return self.weighting_calculator.get_weighted_fitness(
             electrical_fitness, thermal_fitness
         )
-
