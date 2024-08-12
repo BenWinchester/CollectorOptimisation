@@ -1,0 +1,30 @@
+---
+########################################################################################
+# pareto_front.yaml - Specifies the Pareto front.                                      #
+#                                                                                      #
+# Copyright 2024, Ben Winchester                                                       #
+########################################################################################
+
+# The Pareto front is the set of optimal systems of which no one system is optimum. In
+# more simple terms, if there are a range of systems which could be optimal depending on
+# a weighting factor, then all of these systems can be optimal.
+#
+# NOTE: Depending on the underlying model being optimised, the keywords here need to be
+# specified and altered.
+#
+
+pvt:
+  - electrical_weighting: 0.0
+    thermal_weighting: 1.0
+  # - electrical_weighting: 1.0
+  #   thermal_weighting: 5.0
+  - electrical_weighting: 1.0
+    thermal_weighting: 2.0
+  # - electrical_weighting: 1.0
+  #   thermal_weighting: 1.0
+  - electrical_weighting: 2.0
+    thermal_weighting: 1.0
+  # - electrical_weighting: 5.0
+  #   thermal_weighting: 1.0
+  - electrical_weighting: 1.0
+    thermal_weighting: 0.0

@@ -1,0 +1,19 @@
+---
+########################################################################################
+# template_steady_state_data.yaml - Template steady-state data.                        #
+#                                                                                      #
+# Copyright 2024, Ben Winchester                                                       #
+########################################################################################
+
+# Ambient temperature measured in Celcius.
+# Collector input temperatures measured in Celcius.
+# Irradiance measured in Watts per meter squared.
+# Mass flow rate is measured in litres per minute.
+# Wind speed measured in meters per second.
+#
+
+- ambient_temperature: 20  # [degC]
+  collector_input_temperature: 15  # [degC]
+  irradiance: 1000  # [W/m^2]
+  mass_flow_rate: 1.72  # [l/min]
+  wind_speed: 5  # [m/s]

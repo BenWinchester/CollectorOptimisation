@@ -1,0 +1,10 @@
+---
+########################################################################################
+# locations.yaml - Data about the locations being modelled.                            #
+#                                                                                      #
+# Copyright 2024, Ben Winchester                                                       #
+########################################################################################
+
+- name: imperial_chemical_engineering
+  lat: 51.4990
+  lon: -0.1781
