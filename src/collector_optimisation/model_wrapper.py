@@ -21,12 +21,14 @@ import os
 import random
 
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any, Generator, Type, TypeVar
 
 import pandas as pd
 import yaml
 
 from pvt_model import main, SystemData
+
+from .__utils__ import WeatherDataHeader
 
 # MAX_PARALLEL_RUNS:
 #   The maximum number of possible parallel runs, used for id's in the case that these
@@ -164,9 +166,9 @@ def temporary_steady_state_file(
     # Generate a dataframe to contain the information.
     data_frame = pd.DataFrame(
         {
-            "irradiance": solar_irradiance_data,
-            "ambient_temperature": temperature_data,
-            "wind_speed": wind_speed_data,
+            WeatherDataHeader.SOLAR_IRRADIANCE.value: solar_irradiance_data,
+            WeatherDataHeader.AMBIENT_TEMPERATURE.value: temperature_data,
+            WeatherDataHeader.WIND_SPEED.value: wind_speed_data,
             mass_flow_rate: [mass_flow_rate] * len(wind_speed_data),
             "collector_input_temperature": [
                 base_steady_state_data["collector_input_temperature"]
@@ -204,22 +206,38 @@ class WeightingCalculator:
 
     """
 
-    def __init__(
-        self, electrical_output_weighting: float, thermal_output_weighting: float
-    ) -> None:
+    def __init__(self, electrical_weighting: float, thermal_weighting: float) -> None:
         """
         Instantiate the weighting-calculator instance.
 
-        :param: electrical_output_weighting
+        :param: electrical_weighting
             The weighting to give to the electrical output.
 
-        :param: thermal_output_weighting
+        :param: thermal_weighting
             The weighting to give to the thermal output.
 
         """
 
-        self.electrical_output_weighting = electrical_output_weighting
-        self.thermal_output_weighting = thermal_output_weighting
+        self.electrical_weighting = electrical_weighting
+        self.thermal_weighting = thermal_weighting
+        self.total_output_weighting = electrical_weighting + thermal_weighting
+
+    def __repr__(self) -> str:
+        """Return a default representation of the class."""
+
+        return (
+            f"WeightingCalculator(el={self.electrical_weighting:.2g}, th="
+            + f"{self.thermal_weighting:.2g})"
+        )
+
+    @property
+    def name(self) -> str:
+        """
+        Return a name used for identifying and saving information.
+
+        """
+
+        return f"{self.electrical_weighting:.2g}_el_{self.thermal_weighting:.2g}_th"
 
     def get_weighted_fitness(
         self, electrical_fitness: float, thermal_fitness: float
@@ -238,9 +256,10 @@ class WeightingCalculator:
         """
 
         return (
-            self.electrical_output_weighting * electrical_fitness
-            + self.thermal_output_weighting * thermal_fitness
-        )
+            self.electrical_weighting / self.total_output_weighting
+        ) * electrical_fitness + (
+            self.thermal_weighting / self.total_output_weighting
+        ) * thermal_fitness
 
 
 class CollectorType(enum.Enum):
@@ -253,6 +272,13 @@ class CollectorType(enum.Enum):
     """
 
     PVT = "pvt"
+
+
+# Type variable for Curve and children.
+CMA = TypeVar(
+    "CMA",
+    bound="CollectorModelAssessor",
+)
 
 
 class CollectorModelAssessor(abc.ABC):
@@ -268,6 +294,7 @@ class CollectorModelAssessor(abc.ABC):
     """
 
     collector_type: CollectorType
+    collector_type_to_wrapper: dict[CollectorType, CMA] = {}
 
     def __init__(self, weighting_calculator: WeightingCalculator) -> None:
         """
@@ -280,8 +307,9 @@ class CollectorModelAssessor(abc.ABC):
 
         self.weighting_calculator: WeightingCalculator = weighting_calculator
 
-    def __init_subclass__(cls, collector_type: CollectorType) -> None:
+    def __init_subclass__(cls: Type[CMA], collector_type: CollectorType) -> None:
         cls.collector_type = collector_type
+        cls.collector_type_to_wrapper[collector_type] = cls
         return super().__init_subclass__()
 
     @abc.abstractmethod
@@ -305,9 +333,10 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
     def __init__(
         self,
         base_pvt_filepath: str,
-        base_steadystate_filepath: str,
+        base_model_input_files: list[str],
         location_name: str,
         output_filename: str,
+        *,
         weighting_calculator: WeightingCalculator,
     ) -> None:
         """
@@ -331,6 +360,19 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
             performance.
 
         """
+
+        # Process the model--input file information.
+        try:
+            base_steadystate_filepath: str = base_model_input_files[0]
+        except TypeError:
+            raise Exception(
+                "Base model-input files need to be specified on the CLI."
+            ) from None
+        except IndexError:
+            raise Exception(
+                "Expected one model-input file for the model type, "
+                f"{self.collector_type.value}. None were provided."
+            )
 
         self.base_pvt_filepath: str = base_pvt_filepath
         self.base_steady_state_filepath: str = base_steadystate_filepath
@@ -390,7 +432,6 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         self,
         mass_flow_rate: float,
         run_number: int,
-        run_weightings: list[float],
         solar_irradiance_data: list[float],
         temperature_data: list[float],
         wind_speed_data: list[float],
@@ -443,6 +484,9 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
                 )
 
         # Use the run weights for each of the runs that were returned.
+        import pdb
+
+        pdb.set_trace()
 
         # Assess the fitness of the results and return.
         return self.weighting_calculator.get_weighted_fitness(
