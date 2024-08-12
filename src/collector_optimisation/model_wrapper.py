@@ -23,6 +23,7 @@ import random
 from contextlib import contextmanager
 from typing import Any, Generator, Type, TypeVar
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -497,11 +498,10 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
                 )
 
         # Use the run weights for each of the runs that were returned.
-        electrical_fitness = output_data.electrical_power
-        thermal_fitness = output_data.thermal_power
-        import pdb
-
-        pdb.set_trace()
+        electrical_fitness = np.sum(
+            entry.electrical_power for entry in output_data.values()
+        )
+        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())
 
         # Assess the fitness of the results and return.
         return self.weighting_calculator.get_weighted_fitness(

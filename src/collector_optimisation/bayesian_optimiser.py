@@ -15,14 +15,16 @@ take place.
 
 """
 
+import threading
+
 from bayes_opt import BayesianOptimization
 
 from .model_wrapper import PVTModelAssessor
 
 
-class BayesianPVTModelOptimiser(BayesianOptimization):
+class BayesianPVTModelOptimiser(threading.Thread):
     """
-    Runs a Bayesian optimisation the PVTModel.
+    Runs a Bayesian optimisation the PVTModel as a stand-alone thread.
 
     """
 
