@@ -28,7 +28,11 @@ import yaml
 
 from pvt_model import main, SystemData
 
-from .__utils__ import WeatherDataHeader
+from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
+
+# LOCATIONS_FOLDERNAME:
+#   The name of the folder where locations are stored.
+LOCATIONS_FOLDERNAME: str = "locations"
 
 # MAX_PARALLEL_RUNS:
 #   The maximum number of possible parallel runs, used for id's in the case that these
@@ -84,6 +88,13 @@ def temporary_collector_file(
         if next_key == "":
             # Make the substitution and return if at the bottom.
             data[current_key] = value
+
+            # If the value is absorptivity, reduce the transmissivity respectively.
+            if current_key == "absorptivity":
+                data["transmissivity"] = 1 - value
+            if current_key == "transmissivity":
+                data["absorptivity"] = 1 - value
+
             return
 
         # Otherwise, if another stage is needed, call the self using a subset of the
@@ -108,7 +119,7 @@ def temporary_collector_file(
             (
                 filename := os.path.join(
                     TEMPORARY_FILE_DIRECTORY,
-                    f"{os.path.basename(base_collector_filepath)}_{unique_id}",
+                    f"{os.path.basename(base_collector_filepath).split('.')[0]}_{unique_id}.yaml",
                 )
             ),
             "w",
@@ -169,9 +180,9 @@ def temporary_steady_state_file(
             WeatherDataHeader.SOLAR_IRRADIANCE.value: solar_irradiance_data,
             WeatherDataHeader.AMBIENT_TEMPERATURE.value: temperature_data,
             WeatherDataHeader.WIND_SPEED.value: wind_speed_data,
-            mass_flow_rate: [mass_flow_rate] * len(wind_speed_data),
+            "mass_flow_rate": [mass_flow_rate] * len(wind_speed_data),
             "collector_input_temperature": [
-                base_steady_state_data["collector_input_temperature"]
+                base_steady_state_data[0]["collector_input_temperature"]
             ]
             * len(wind_speed_data),
         }
@@ -183,13 +194,13 @@ def temporary_steady_state_file(
             (
                 filename := os.path.join(
                     TEMPORARY_FILE_DIRECTORY,
-                    f"{os.path.basename(base_steady_state_filepath)}_{unique_id}",
+                    f"{os.path.basename(base_steady_state_filepath).split('.')[0]}_{unique_id}.csv",
                 )
             ),
             "w",
             encoding="UTF-8",
         ) as temp_file:
-            data_frame.to_csv(temp_file)
+            data_frame.to_csv(temp_file, index=None)
 
         yield filename
 
@@ -380,10 +391,12 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
             "--skip-analysis",
             "--output",
             output_filename,
-            "--decoupled" "--steady-state" "--initial-month",
+            "--decoupled",
+            "--steady-state",
+            "--initial-month",
             "7",
             "--location",
-            location_name,
+            os.path.join(INPUT_FILES_DIRECTORY, LOCATIONS_FOLDERNAME, location_name),
             "--portion-covered",
             "1",
             "--x-resolution",
@@ -426,7 +439,7 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         ]
         model_args.extend(["--pvt-data-file", temporary_pvt_filepath])
 
-        return main(self.model_args)
+        return main(model_args)
 
     def fitness_function(
         self,
@@ -484,6 +497,8 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
                 )
 
         # Use the run weights for each of the runs that were returned.
+        electrical_fitness = output_data.electrical_power
+        thermal_fitness = output_data.thermal_power
         import pdb
 
         pdb.set_trace()

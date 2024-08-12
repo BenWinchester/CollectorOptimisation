@@ -15,7 +15,15 @@ The utility module is responsible for providing common utility functions and hel
 
 import enum
 
-__all__ = ("WeatherDataHeader",)
+__all__ = (
+    "INPUT_FILES_DIRECTORY",
+    "WeatherDataHeader",
+)
+
+
+# INPUT_FILES_DIRECTORY:
+#   The name of the input-files directory.
+INPUT_FILES_DIRECTORY: str = "input_files"
 
 
 class WeatherDataHeader(enum.Enum):

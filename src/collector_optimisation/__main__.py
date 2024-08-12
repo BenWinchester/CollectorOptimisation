@@ -33,17 +33,13 @@ import yaml
 from sklearn.neighbors import KernelDensity
 from tqdm import tqdm
 
-from .__utils__ import WeatherDataHeader
+from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
 from .model_wrapper import CollectorModelAssessor, CollectorType, WeightingCalculator
 
 
 # COLLECTOR_FILES_DIRECTORY:
 #   The name of the directory containing base collector files.
 COLLECTOR_FILES_DIRECTORY: str = "collector_designs"
-
-# INPUT_FILES_DIRECTORY:
-#   The name of the input-files directory.
-INPUT_FILES_DIRECTORY: str = "input_files"
 
 # LOCATIONS_FILENAME:
 #   The name of the file containing the locations information.
@@ -52,6 +48,10 @@ LOCATIONS_FILENAME: str = "locations.yaml"
 # MODEL_INPUTS_DIRECTORY:
 #   The directory containing model inputs.
 MODEL_INPUTS_DIRECTORY: str = "steady_state_data"
+
+# OPTIMISATION_INPUTS_FILE
+#   The name of the optimisations inputs file.
+OPTIMISATION_INPUTS_FILE: str = "optimisation.yaml"
 
 # PARAMETER_PRECISION_MAP:
 #   Utilised for rounding the parameters based on the precision specified.
@@ -132,6 +132,9 @@ class SampleType(enum.Enum):
 
     """
 
+    DENSITY = "density"
+    GRID = "grid"
+
 
 def _parse_args(args: list[Any]) -> argparse.Namespace:
     """
@@ -148,6 +151,12 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
 
     parser.add_argument(
         "-l", "--location", help="The name of the location to consider.", type=str
+    )
+    parser.add_argument(
+        "-w",
+        "--weather-sample-size",
+        help="The number of weather points to sample.",
+        type=int,
     )
 
     collector_model_args = parser.add_argument_group(
@@ -177,7 +186,9 @@ def _parse_files(
     base_collector_filename: str,
     base_model_input_files: list[str],
     location_name: str,
-    sample_type: SampleType = SampelType.DENSITY,
+    *,
+    sample_type: SampleType = SampleType.DENSITY,
+    weather_sample_size: int = 40,
 ) -> tuple[list[CollectorModelAssessor], pd.DataFrame, pd.DataFrame]:
     """
     Parse the input files needed to run the model.
@@ -190,6 +201,9 @@ def _parse_files(
 
     :param: location_name
         The name of the location to consider.
+
+    :param: weather_sample_size
+        The sample size to use when sampling the weather data.
 
     :returns:
         - The collector model assessors;
@@ -358,10 +372,10 @@ def _parse_files(
         return np.array(sample)
 
     density_based_weather_sample = _density_based_sampling(
-        modelling_weather_array, 40, bandwidth=0.4
+        modelling_weather_array, weather_sample_size, bandwidth=0.4
     )
     grid_based_weather_sample = _weighted_grid_sampling(
-        modelling_weather_array, [50, 5, 1], 40
+        modelling_weather_array, [50, 5, 1], weather_sample_size
     )
 
     ###################################################################
@@ -526,6 +540,19 @@ def _parse_files(
             ]
         )
 
+    # Parse the optimisation inputs information and convert into a format that is usable
+    # by the Bayesian optimisation script.
+    with open(
+        os.path.join(INPUT_FILES_DIRECTORY, OPTIMISATION_INPUTS_FILE),
+        "r",
+        encoding="UTF-8",
+    ) as optimisation_inputs_file:
+        optimisation_inputs = yaml.safe_load(optimisation_inputs_file)
+
+    optimisation_parameters = {
+        key: (value["min"], value["max"]) for key, value in optimisation_inputs.items()
+    }
+
     # Return the sampled weather data alone with the model assessors.
     weather_sample = pd.DataFrame(
         density_based_weather_sample
@@ -545,7 +572,7 @@ def _parse_files(
     weather = pd.DataFrame(modelling_weather_array)
     weather.columns = pd.Index(column_headers)
 
-    return collector_model_assessors, weather_sample, weather
+    return collector_model_assessors, optimisation_parameters, weather_sample, weather
 
 
 def _validate_args(parsed_args: argparse.Namespace) -> tuple[str, list[str]]:
@@ -619,11 +646,29 @@ def main(unparsed_args: list[Any]) -> None:
     (base_collector_filepath, base_model_input_filepaths) = _validate_args(parsed_args)
 
     # Open the configuration files necessary for the run.
-    collector_model_assessors, weather_data_sample, weather_data_full = _parse_files(
+    (
+        collector_model_assessors,
+        optimisation_parameters,
+        weather_data_sample,
+        weather_data_full,
+    ) = _parse_files(
         base_collector_filepath,
         base_model_input_filepaths,
         parsed_args.location,
+        weather_sample_size=parsed_args.weather_sample_size,
     )
+
+    collector_model_assessors[0].fitness_function(
+        0.5,
+        0,
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+    )
+
+    import pdb
+
+    pdb.set_trace()
 
     # Construct a Bayseian optimiser based on the inputs.
 
