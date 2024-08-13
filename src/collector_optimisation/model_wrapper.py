@@ -19,15 +19,18 @@ import abc
 import enum
 import os
 import random
+import sys
 
 from contextlib import contextmanager
+from io import StringIO
 from typing import Any, Generator, Type, TypeVar
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from pvt_model import main, SystemData
+from pvt_model import main as pvt_model_main
+from pvt_model import SystemData
 
 from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
 
@@ -43,6 +46,51 @@ MAX_PARALLEL_RUNS: int = 10000
 # TEMPORARY_FILE_DIRECTORY:
 #   The name of the temporary file directory to use.
 TEMPORARY_FILE_DIRECTORY: str = "temp"
+
+
+# Type variable for capturing contet manager.
+C = TypeVar(
+    "C",
+    bound="Capturing",
+)
+
+
+class Capturing(list):
+    """
+    Context manager for capturing calls to stdout.
+
+    This class comes from Kindal on StackExchange:
+    https://stackoverflow.com/a/16571630
+
+    """
+
+    def __enter__(self) -> Type[C]:
+        """
+        Enter the context manager.
+
+        Sets up a prive variable where the stdout calls is stored and returns this
+        instance.
+
+        """
+
+        self._stdout = sys.stdout
+        sys.stdout = self._stringio = StringIO()
+        return self
+
+    def __exit__(self, *args) -> None:
+        """
+        Exit the context manager.
+
+        Stores the current value of the stdout call and returns, then deletes to free up
+        memory once the `list` has been returned.
+
+        NOTE: Because this class inherits from `list`, it can return itself as a list.
+
+        """
+
+        self.extend(self._stringio.getvalue().splitlines())
+        del self._stringio  # free up some memory
+        sys.stdout = self._stdout
 
 
 @contextmanager
@@ -88,13 +136,13 @@ def temporary_collector_file(
 
         if next_key == "":
             # Make the substitution and return if at the bottom.
-            data[current_key] = value
+            data[current_key] = float(value)
 
             # If the value is absorptivity, reduce the transmissivity respectively.
             if current_key == "absorptivity":
-                data["transmissivity"] = 1 - value
+                data["transmissivity"] = float(1 - value)
             if current_key == "transmissivity":
-                data["absorptivity"] = 1 - value
+                data["absorptivity"] = float(1 - value)
 
             return
 
@@ -286,7 +334,7 @@ class CollectorType(enum.Enum):
     PVT = "pvt"
 
 
-# Type variable for Curve and children.
+# Type variable for collector model assessor and children.
 CMA = TypeVar(
     "CMA",
     bound="CollectorModelAssessor",
@@ -413,7 +461,9 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
             "p",
             "f",
             "--disable-logging",
+            "--skip-output",
         ]
+        self.output_filename = output_filename
 
         super().__init__(weighting_calculator)
 
@@ -440,7 +490,78 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         ]
         model_args.extend(["--pvt-data-file", temporary_pvt_filepath])
 
-        return main(model_args)
+        # Remove the output file if it already exists.
+        if os.path.isfile(self.output_filename):
+            os.remove(self.output_filename)
+
+        with Capturing():
+            return pvt_model_main(model_args)
+
+    def unweighted_fitness_function(
+        self,
+        mass_flow_rate: float,
+        run_number: int,
+        solar_irradiance_data: list[float],
+        temperature_data: list[float],
+        wind_speed_data: list[float],
+        **kwargs,
+    ) -> tuple[float, float]:
+        """
+        Calculate the un-weighted, i.e., separate fitness for electricity and heat.
+
+        Operation Parameters:
+            :param: mass_flow_rate
+                The mass flow rate through the collector.
+
+        :param: run_number
+            The run number.
+
+        :param: run_weightings
+            The weightings to use for each result of the run.
+
+        :param: solar_irradiance_data
+            The solar-irradiance data to use for the run.
+
+        :param: temperature_data
+            The temperature data for the run.
+
+        :param: wind_speed_data
+            The wind-speed data for the run.
+
+        Design Parameters:
+            These are passed in with the kwargs parameters and determined based on this.
+
+        :returns:
+            - The electrical fitness of the model,
+            - The thermal fitness of the model.
+
+        """
+
+        # Make temporary files as needed based on the inputs for the run.
+        with temporary_collector_file(
+            self.base_pvt_filepath, kwargs, run_number
+        ) as temp_pvt_filepath:
+            with temporary_steady_state_file(
+                self.base_steady_state_filepath,
+                mass_flow_rate,
+                solar_irradiance_data,
+                temperature_data,
+                wind_speed_data,
+                run_number,
+            ) as temp_steady_state_filepath:
+                # Run the model.
+                output_data = self._run_model(
+                    temp_pvt_filepath, temp_steady_state_filepath
+                )
+
+        # Use the run weights for each of the runs that were returned.
+        electrical_fitness = np.sum(
+            entry.electrical_power for entry in output_data.values()
+        )
+        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())
+
+        # Return these fitnesses.
+        return electrical_fitness, thermal_fitness
 
     def fitness_function(
         self,
@@ -480,28 +601,15 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         """
 
-        # Make temporary files as needed based on the inputs for the run.
-        with temporary_collector_file(
-            self.base_pvt_filepath, kwargs, run_number
-        ) as temp_pvt_filepath:
-            with temporary_steady_state_file(
-                self.base_steady_state_filepath,
-                mass_flow_rate,
-                solar_irradiance_data,
-                temperature_data,
-                wind_speed_data,
-                run_number,
-            ) as temp_steady_state_filepath:
-                # Run the model.
-                output_data = self._run_model(
-                    temp_pvt_filepath, temp_steady_state_filepath
-                )
-
-        # Use the run weights for each of the runs that were returned.
-        electrical_fitness = np.sum(
-            entry.electrical_power for entry in output_data.values()
+        # Calculate the unweighted fitnesses.
+        electrical_fitness, thermal_fitness = self.unweighted_fitness_function(
+            mass_flow_rate,
+            run_number,
+            solar_irradiance_data,
+            temperature_data,
+            wind_speed_data,
+            **kwargs,
         )
-        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())
 
         # Assess the fitness of the results and return.
         return self.weighting_calculator.get_weighted_fitness(

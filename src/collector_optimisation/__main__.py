@@ -34,6 +34,10 @@ from sklearn.neighbors import KernelDensity
 from tqdm import tqdm
 
 from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
+from .bayesian_optimiser import (
+    BayesianPVTModelOptimiserSeries,
+    BayesianPVTModelOptimiserThread,
+)
 from .model_wrapper import CollectorModelAssessor, CollectorType, WeightingCalculator
 
 
@@ -658,13 +662,105 @@ def main(unparsed_args: list[Any]) -> None:
         weather_sample_size=parsed_args.weather_sample_size,
     )
 
-    collector_model_assessors[0].fitness_function(
-        0.5,
-        0,
-        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-    )
+    # # Run the Bayesian optimiser threads
+    # bayesian_assessor = BayesianPVTModelOptimiserSeries(
+    #     optimisation_parameters,
+    #     collector_model_assessors[0],
+    #     (collector_model_index_to_results_map := {}),
+    #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+    #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+    #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+    #     run_id=0,
+    # )
+    # bayesian_assessor.run()
+
+    # # Determine the fitness of this value.
+    # electrical_fitness, thermal_fitness = (
+    #     bayesian_assessor.pvt_model_assessor.unweighted_fitness_function(
+    #         run_number=index,
+    #         solar_irradiance_data=weather_data_sample[
+    #             WeatherDataHeader.SOLAR_IRRADIANCE.value
+    #         ],
+    #         temperature_data=weather_data_sample[
+    #             WeatherDataHeader.AMBIENT_TEMPERATURE.value
+    #         ],
+    #         wind_speed_data=weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+    #         **bayesian_assessor.bayesian_optimiser.max["params"],
+    #     )
+    # )
+
+    # # Plot the fitnesses.
+    # plt.scatter(
+    #     [electrical_fitness / len(weather_data_sample)],
+    #     [thermal_fitness / len(weather_data_sample)],
+    #     s=100,
+    #     marker="h",
+    # )
+    # plt.xlabel("Average electrical power generated / kW")
+    # plt.ylabel("Average thermal power generated / kW")
+    # plt.xlim(-5, None)
+    # plt.ylim(-5, None)
+    # plt.savefig("Sample run for first assessor.")
+
+    # import pdb
+
+    # pdb.set_trace()
+
+    # Setup the Bayesian optimiser threads.
+    bayesian_assessors: list[BayesianPVTModelOptimiserThread] = []
+    collector_model_index_to_results_map: dict[str, dict[str, float] | float] = {}
+    for index, collector_model_assessor in enumerate(collector_model_assessors):
+        if collector_model_assessor.collector_type == CollectorType.PVT:
+            bayesian_assessors.append(
+                bayesian_assessor := BayesianPVTModelOptimiserThread(
+                    optimisation_parameters,
+                    collector_model_assessor,
+                    collector_model_index_to_results_map,
+                    weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+                    weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+                    weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+                    run_id=index,
+                )
+            )
+            bayesian_assessor.start()
+
+    for bayesian_assessor in bayesian_assessors:
+        bayesian_assessor.join()
+
+    # Combine the results to form the Pareto curve
+    electrical_fitnesses: list[float] = []
+    thermal_fitnesses: list[float] = []
+    labels: list[str] = []
+    for index, collector_model_assessor in enumerate(collector_model_assessors):
+        electrical_fitness, thermal_fitness = (
+            bayesian_assessor.pvt_model_assessor.unweighted_fitness_function(
+                run_number=index,
+                solar_irradiance_data=weather_data_sample[
+                    WeatherDataHeader.SOLAR_IRRADIANCE.value
+                ],
+                temperature_data=weather_data_sample[
+                    WeatherDataHeader.AMBIENT_TEMPERATURE.value
+                ],
+                wind_speed_data=weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+                **bayesian_assessor.bayesian_optimiser.max["params"],
+            )
+        )
+        electrical_fitnesses.append(electrical_fitness)
+        thermal_fitnesses.append(thermal_fitness)
+        labels.append((label := collector_model_assessor.weighting_calculator.name))
+        plt.scatter(
+            [electrical_fitness / len(weather_data_sample)],
+            [thermal_fitness / len(weather_data_sample)],
+            marker="h",
+            label=label,
+        )
+
+    # Plot the fitnesses.
+    plt.xlabel("Average electrical power generated / kW")
+    plt.ylabel("Average thermal power generated / kW")
+    plt.xlim(-5, None)
+    plt.ylim(-5, None)
+    plt.show()
 
     import pdb
 

@@ -1,0 +1,43 @@
+---
+########################################################################################
+# optimisation.yaml - Bounds used to constrain the optimisation.                       #
+#                                                                                      #
+# Copyright 2024, Ben Winchester                                                       #
+########################################################################################
+
+########################
+# Operation parameters #
+########################
+
+mass_flow_rate:  # Segment-only [l/h]
+  min: 0.001
+  max: 200
+
+#####################
+# Design parameters #
+#####################
+
+pv/thermal_coefficient:
+  min: 0.035
+  max: 0.1
+
+glass/absorptivity:
+  min: 0.0
+  max: 0.2
+
+glass/emissivity:
+  min: 0.02
+  max: 1.0
+
+pv/reference_efficiency:
+  min: 0.06
+  max: 0.25
+
+pvt_collector/width:
+  min: 0.02965517
+  max: 0.86
+
+air_gap/thickness:
+  min: 0.01
+  max: 0.1
+
