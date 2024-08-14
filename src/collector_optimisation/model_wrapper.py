@@ -74,7 +74,9 @@ class Capturing(list):
         """
 
         self._stdout = sys.stdout
-        sys.stdout = self._stringio = StringIO()
+        # self._stderr = sys.stderr
+        sys.stdout = self._stringioout = StringIO()
+        # sys.stderr = self._stringioerr = StringIO()
         return self
 
     def __exit__(self, *args) -> None:
@@ -88,9 +90,12 @@ class Capturing(list):
 
         """
 
-        self.extend(self._stringio.getvalue().splitlines())
-        del self._stringio  # free up some memory
+        self.extend(self._stringioout.getvalue().splitlines())
+        # self.extend(self._stringioerr.getvalue().splitlines())
+        del self._stringioout  # free up some memory
+        # del self._stringioerr  # free up some memory
         sys.stdout = self._stdout
+        # sys.stderr = self._stderr
 
 
 @contextmanager

@@ -189,4 +189,4 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
             init_points=len(self.optimisation_parameters), n_iter=5
         )
 
-        self.run_id_to_result_map[self.run_id] = self.bayesian_optimiser.max
+        self.run_id_to_results_map[self.run_id] = self.bayesian_optimiser.max

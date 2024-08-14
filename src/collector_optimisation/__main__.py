@@ -382,45 +382,65 @@ def _parse_files(
         modelling_weather_array, [50, 5, 1], weather_sample_size
     )
 
+    # Return the sampled weather data alone with the model assessors.
+    weather_sample = pd.DataFrame(
+        density_based_weather_sample
+        if sample_type == SampleType.DENSITY
+        else grid_based_weather_sample
+    )
+    weather_sample.columns = pd.Index(
+        (
+            column_headers := [
+                WeatherDataHeader.SOLAR_IRRADIANCE.value,
+                WeatherDataHeader.AMBIENT_TEMPERATURE.value,
+                WeatherDataHeader.WIND_SPEED.value,
+            ]
+        )
+    )
+
     ###################################################################
     # Code for plotting and visualising the weather-data distribution #
     ###################################################################
 
-    # sns.set_context("notebook")
-    # sns.set_style("ticks")
+    sns.set_context("notebook")
+    sns.set_style("ticks")
 
-    # sns.set_palette(
-    #     [
-    #         "#2CBCE0",
-    #         "#0D699F",
-    #     ]
-    # )
+    sns.set_palette(
+        [
+            "#2CBCE0",
+            "#0D699F",
+        ]
+    )
 
-    # sns.jointplot(
-    #     modelling_weather_data,
-    #     x="irradiance_total",
-    #     y="temperature",
-    #     marker="h",
-    #     alpha=0.2,
-    #     linewidth=0,
-    #     height=32 / 5,
-    #     ratio=4,
-    #     marginal_kws={"bins": 20},
-    # )
-    # ax = plt.gca()
-    # ax.set_xlabel("Irradiance / W/m$^2$")
-    # ax.set_ylabel("Temperature / $^\circ$C")
+    sns.jointplot(
+        modelling_weather_data,
+        x="irradiance_total",
+        y="temperature",
+        marker="h",
+        alpha=0.2,
+        linewidth=0,
+        height=32 / 5,
+        ratio=4,
+        marginal_kws={"bins": 20},
+    )
+    ax = plt.gca()
+    ax.set_xlabel("Irradiance / W/m$^2$")
+    ax.set_ylabel("Temperature / $^\circ$C")
 
-    # plt.scatter(
-    #     x=density_based_weather_sample[:, 0],
-    #     y=density_based_weather_sample[:, 1],
-    #     s=100,
-    #     marker="H",
-    #     alpha=0.8,
-    #     linewidth=0,
-    #     color="C1",
-    # )
-    # plt.savefig("scatter_plot_density_weather.pdf", bbox_inches="tight", pad_inches=0)
+    plt.scatter(
+        x=weather_sample.loc[:, WeatherDataHeader.SOLAR_IRRADIANCE.value],
+        y=weather_sample.loc[:, WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+        s=100,
+        marker="H",
+        alpha=0.8,
+        linewidth=0,
+        color="C1",
+    )
+    plt.savefig(
+        f"scatter_plot_{sample_type.value}_weather.pdf",
+        bbox_inches="tight",
+        pad_inches=0,
+    )
 
     # sns.jointplot(
     #     modelling_weather_data,
@@ -448,22 +468,22 @@ def _parse_files(
     # )
     # plt.savefig("scatter_plot_grid_weather.pdf", bbox_inches="tight", pad_inches=0)
 
-    # sns.jointplot(
-    #     modelling_weather_data,
-    #     x="irradiance_total",
-    #     y="temperature",
-    #     linewidth=0,
-    #     height=32 / 5,
-    #     ratio=4,
-    #     marginal_kws={"bins": 20},
-    #     kind="hex",
-    # )
-    # ax = plt.gca()
-    # ax.set_xlabel("Irradiance / W/m$^2$")
-    # ax.set_ylabel("Temperature / $^\circ$C")
-    # xlim = ax.get_xlim()
-    # ylim = ax.get_ylim()
-    # plt.savefig("hex_plot_weather_data.pdf", bbox_inches="tight", pad_inches=0)
+    sns.jointplot(
+        modelling_weather_data,
+        x="irradiance_total",
+        y="temperature",
+        linewidth=0,
+        height=32 / 5,
+        ratio=4,
+        marginal_kws={"bins": 20},
+        kind="hex",
+    )
+    ax = plt.gca()
+    ax.set_xlabel("Irradiance / W/m$^2$")
+    ax.set_ylabel("Temperature / $^\circ$C")
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    plt.savefig("hex_plot_weather_data.pdf", bbox_inches="tight", pad_inches=0)
 
     # modelling_weather_data["rounded_wind_speed"] = [
     #     int(entry) for entry in modelling_weather_data["wind_speed"]
@@ -556,22 +576,6 @@ def _parse_files(
     optimisation_parameters = {
         key: (value["min"], value["max"]) for key, value in optimisation_inputs.items()
     }
-
-    # Return the sampled weather data alone with the model assessors.
-    weather_sample = pd.DataFrame(
-        density_based_weather_sample
-        if sample_type == SampleType.DENSITY
-        else grid_based_weather_sample
-    )
-    weather_sample.columns = pd.Index(
-        (
-            column_headers := [
-                WeatherDataHeader.SOLAR_IRRADIANCE.value,
-                WeatherDataHeader.AMBIENT_TEMPERATURE.value,
-                WeatherDataHeader.WIND_SPEED.value,
-            ]
-        )
-    )
 
     weather = pd.DataFrame(modelling_weather_array)
     weather.columns = pd.Index(column_headers)
