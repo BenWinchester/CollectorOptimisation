@@ -20,6 +20,7 @@ import enum
 import os
 import random
 import sys
+import threading
 
 from contextlib import contextmanager
 from io import StringIO
@@ -34,6 +35,11 @@ from pvt_model import SystemData
 
 from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
 
+# FILE_LOCK:
+#   Lock used to lock the file for storing information based on runs and fitness
+# information.
+FILE_LOCK: threading.Lock = threading.Lock()
+
 # LOCATIONS_FOLDERNAME:
 #   The name of the folder where locations are stored.
 LOCATIONS_FOLDERNAME: str = "locations"
@@ -42,6 +48,10 @@ LOCATIONS_FOLDERNAME: str = "locations"
 #   The maximum number of possible parallel runs, used for id's in the case that these
 #   aren't provided to context managers.
 MAX_PARALLEL_RUNS: int = 10000
+
+# RUNS_DATA_FILENAME:
+#   The name of the runs data file.
+RUNS_DATA_FILENAME: str = "runs_data.csv"
 
 # TEMPORARY_FILE_DIRECTORY:
 #   The name of the temporary file directory to use.
@@ -96,6 +106,44 @@ class Capturing(list):
         # del self._stringioerr  # free up some memory
         sys.stdout = self._stdout
         # sys.stderr = self._stderr
+
+
+def _save_current_run(**kwargs) -> None:
+    """
+    Save information about the current run.
+
+    :param: args
+        Arguments to be saved.
+
+    :param: kwargs
+        Keyword arguments to be saved.
+
+    """
+
+    # Acquire the lock on saving the file.
+    FILE_LOCK.acquire()
+
+    row = pd.DataFrame({key: [value] for key, value in kwargs.items()})
+
+    try:
+        # Read any existing runs that have taken place.
+        if os.path.isfile(RUNS_DATA_FILENAME):
+            with open(RUNS_DATA_FILENAME, "r", encoding="UTF-8") as runs_file:
+                runs_data: pd.DataFrame | None = pd.read_csv(runs_file)
+
+        else:
+            runs_data = None
+
+        # Append the current run information.
+        runs_data = pd.concat([runs_data, row])
+
+        # Write the data to the file
+        with open(RUNS_DATA_FILENAME, "w", encoding="UTF-8") as runs_file:
+            runs_data.to_csv(runs_file, index=None)
+
+    # Release the lock at the end of attempting to save information.
+    finally:
+        FILE_LOCK.release()
 
 
 @contextmanager
@@ -265,6 +313,30 @@ def temporary_steady_state_file(
             pass
 
 
+class Fitness(float):
+    """
+    Used to represent fitness whilst containing additional attributes.
+
+    .. attribute:: electrical_fitness
+        The electrical fitness value.
+
+    .. attribute:: thermal_fitness
+        The thermal fitness value.
+
+    """
+
+    def __new__(
+        cls, combined_fitness: float, electrical_fitness: float, thermal_fitness: float
+    ):
+        """Override the __new__ method to provide features."""
+
+        _instance = super().__new__(cls, combined_fitness)
+        _instance.electrical_fitness = electrical_fitness
+        _instance.thermal_fitness = thermal_fitness
+
+        return _instance
+
+
 class WeightingCalculator:
     """
     Contains functionality for calculating the weighting between outputs.
@@ -306,7 +378,7 @@ class WeightingCalculator:
 
     def get_weighted_fitness(
         self, electrical_fitness: float, thermal_fitness: float
-    ) -> float:
+    ) -> Fitness:
         """
         Calculate and return a combined fitness based on electrical and thermal values.
 
@@ -320,11 +392,13 @@ class WeightingCalculator:
 
         """
 
-        return (
-            self.electrical_weighting / self.total_output_weighting
-        ) * electrical_fitness + (
-            self.thermal_weighting / self.total_output_weighting
-        ) * thermal_fitness
+        return Fitness(
+            (self.electrical_weighting / self.total_output_weighting)
+            * electrical_fitness
+            + (self.thermal_weighting / self.total_output_weighting) * thermal_fitness,
+            electrical_fitness,
+            thermal_fitness,
+        )
 
 
 class CollectorType(enum.Enum):
@@ -617,6 +691,10 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         )
 
         # Assess the fitness of the results and return.
-        return self.weighting_calculator.get_weighted_fitness(
+        weighted_fitness = self.weighting_calculator.get_weighted_fitness(
             electrical_fitness, thermal_fitness
         )
+
+        _save_current_run(fitness=weighted_fitness, electrical_fitness=electrical_fitness, thermal_fitness=thermal_fitness, mass_flow_rate=mass_flow_rate, run_number = run_number, **kwargs)
+
+        return weighted_fitness

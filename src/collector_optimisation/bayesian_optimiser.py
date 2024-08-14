@@ -55,6 +55,8 @@ class BayesianPVTModelOptimiserSeries:
         temperature_data: list[float],
         wind_speed_data: list[float],
         *,
+        initial_points: int | None = None,
+        num_iterations: int = 5,
         run_id: int,
         random_state: int = 1,
     ) -> None:
@@ -76,6 +78,7 @@ class BayesianPVTModelOptimiserSeries:
 
         """
 
+        self.num_iterations = num_iterations
         self.optimisation_parameters = optimisation_parameters
         self.pvt_model_assessor = pvt_model_assessor
         self.run_id = run_id
@@ -92,6 +95,13 @@ class BayesianPVTModelOptimiserSeries:
             random_state=random_state,
         )
 
+        # Set the number of initial points
+        if initial_points is None:
+            initial_points = len(self.optimisation_parameters)
+
+        self.num_initial_points = initial_points
+
+
     def run(self) -> dict[str, dict[str, float] | float]:
         """
         Run the thread to compute a value.
@@ -103,7 +113,7 @@ class BayesianPVTModelOptimiserSeries:
 
         # Run the optimiser.
         self.bayesian_optimiser.maximize(
-            init_points=len(self.optimisation_parameters), n_iter=5
+            init_points=self.num_initial_points, n_iter=self.num_iterations
         )
 
         # Save the result and return.
@@ -140,6 +150,8 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
         temperature_data: list[float],
         wind_speed_data: list[float],
         *,
+        initial_points: int | None = None,
+        num_iterations: int = 5,
         run_id: int,
         random_state: int = 1,
     ) -> None:
@@ -161,6 +173,7 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
 
         """
 
+        self.num_iterations = num_iterations
         self.optimisation_parameters = optimisation_parameters
         self.pvt_model_assessor = pvt_model_assessor
         self.run_id = run_id
@@ -177,6 +190,12 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
             random_state=random_state,
         )
 
+        # Set the number of initial points
+        if initial_points is None:
+            initial_points = len(self.optimisation_parameters)
+
+        self.num_initial_points = initial_points
+
         super().__init__()
 
     def run(self) -> None:
@@ -186,7 +205,7 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
         """
 
         self.bayesian_optimiser.maximize(
-            init_points=len(self.optimisation_parameters), n_iter=5
+            init_points=self.num_initial_points, n_iter=self.num_iterations
         )
 
         self.run_id_to_results_map[self.run_id] = self.bayesian_optimiser.max
