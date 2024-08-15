@@ -838,7 +838,8 @@ def main(unparsed_args: list[Any]) -> None:
         color="grey",
         marker="h",
         s=200,
-        alpha=0.9,
+        alpha=0.5,
+        linewidth=0,
     )
     sns.scatterplot(
         maximal_runs,
@@ -847,7 +848,8 @@ def main(unparsed_args: list[Any]) -> None:
         hue="run_number",
         palette=un_color_palette,
         s=200,
-        alpha=0.9,
+        alpha=0.8,
+        marker="h",
     )
     plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
 
