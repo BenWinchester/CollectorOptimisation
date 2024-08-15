@@ -695,6 +695,13 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
             electrical_fitness, thermal_fitness
         )
 
-        _save_current_run(fitness=weighted_fitness, electrical_fitness=electrical_fitness, thermal_fitness=thermal_fitness, mass_flow_rate=mass_flow_rate, run_number = run_number, **kwargs)
+        _save_current_run(
+            fitness=weighted_fitness,
+            electrical_fitness=electrical_fitness,
+            thermal_fitness=thermal_fitness,
+            mass_flow_rate=mass_flow_rate,
+            run_number=run_number,
+            **kwargs,
+        )
 
         return weighted_fitness

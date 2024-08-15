@@ -23,6 +23,7 @@ import os
 import sys
 
 from dataclasses import dataclass, field
+from matplotlib import rc
 from typing import Any
 
 import numpy as np
@@ -37,11 +38,13 @@ from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
 from .bayesian_optimiser import (
     BayesianPVTModelOptimiserSeries,
     BayesianPVTModelOptimiserThread,
+    MAX_RESULTS_FILENAME,
 )
 from .model_wrapper import (
     CollectorModelAssessor,
     CollectorType,
     Fitness,
+    RUNS_DATA_FILENAME,
     WeightingCalculator,
 )
 
@@ -85,6 +88,22 @@ WEATHER_DIRECTORY: str = "weather_data"
 # WIND_FILENAME:
 #   The name of the wind filename.
 WIND_FILENAME: str = "ninja_wind_{lat:.4f}_{lon:.4f}_corrected.csv"
+
+# Seaborn setup
+rc("font", **{"family": "sans-serif", "sans-serif": ["Arial"]})
+sns.set_context("notebook")
+sns.set_style("whitegrid")
+un_color_palette = sns.color_palette(
+    [
+        "#C51A2E",
+        "#ED6A30",
+        "#FBC219",
+        "#2CBCE0",
+        "#2297D5",
+        "#0D699F",
+        "#19496A",
+    ]
+)
 
 
 @dataclass
@@ -679,8 +698,8 @@ def main(unparsed_args: list[Any]) -> None:
         weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
         weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
         weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=1,
-        num_iterations=2,
+        initial_points=(_initial_points := 4),
+        num_iterations=(_num_iterations := 4),
         run_id=0,
     )
     bayesian_assessor_0.run()
@@ -692,35 +711,35 @@ def main(unparsed_args: list[Any]) -> None:
         weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
         weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
         weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=1,
-        num_iterations=2,
+        initial_points=_initial_points,
+        num_iterations=_num_iterations,
         run_id=1,
     )
     bayesian_assessor_1.run()
 
     bayesian_assessor_2 = BayesianPVTModelOptimiserSeries(
         optimisation_parameters,
-        collector_model_assessors[1],
+        collector_model_assessors[2],
         (collector_model_index_to_results_map := {}),
         weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
         weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
         weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=1,
-        num_iterations=2,
-        run_id=1,
+        initial_points=_initial_points,
+        num_iterations=_num_iterations,
+        run_id=2,
     )
     bayesian_assessor_2.run()
 
     bayesian_assessor_3 = BayesianPVTModelOptimiserSeries(
         optimisation_parameters,
-        collector_model_assessors[1],
+        collector_model_assessors[3],
         (collector_model_index_to_results_map := {}),
         weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
         weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
         weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=1,
-        num_iterations=2,
-        run_id=1,
+        initial_points=_initial_points,
+        num_iterations=_num_iterations,
+        run_id=3,
     )
     bayesian_assessor_3.run()
 
@@ -771,18 +790,67 @@ def main(unparsed_args: list[Any]) -> None:
     #         linewidth=0,
     #     )
 
-
     # Determine the values to plot the Pareto front
-    average_solar_irradiance=np.sum(weather_data_sample[
-        WeatherDataHeader.SOLAR_IRRADIANCE.value
-    ]) / len(weather_data_sample)
+    average_solar_irradiance = np.sum(
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value]
+    ) / len(weather_data_sample)
     max_collector_size = 1.4276
-    max_electrical_efficiency = np.max([entry["params"]["pv/reference_efficiency"] for entry in bayesian_assessor_0.bayesian_optimiser.res])
+    max_electrical_efficiency = np.max(
+        [
+            entry["params"]["pv/reference_efficiency"]
+            for entry in bayesian_assessor_0.bayesian_optimiser.res
+        ]
+    )
 
-    thermal_values = np.linspace(0, (max_energy_in:=max_collector_size * average_solar_irradiance), 100)
-    electrical_values = max_energy_in * max_electrical_efficiency * np.sqrt(1 - thermal_values ** 2 / max_energy_in ** 2)
+    thermal_values = np.linspace(
+        0, (max_energy_in := max_collector_size * average_solar_irradiance), 100
+    )
+    electrical_values = (
+        max_energy_in
+        * max_electrical_efficiency
+        * np.sqrt(1 - thermal_values**2 / max_energy_in**2)
+    )
 
+    plt.close()
     plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
+    plt.show()
+
+    with open(MAX_RESULTS_FILENAME, "r") as max_results_file:
+        max_results = pd.read_csv(max_results_file)
+
+    with open(RUNS_DATA_FILENAME, "r") as runs_data_file:
+        runs_data = pd.read_csv(runs_data_file)
+
+    maximal_runs = pd.DataFrame(
+        [
+            row[1]
+            for row in runs_data.iterrows()
+            if row[1]["fitness"] in max_results["target"].values
+        ]
+    )
+
+    # Plot the Pareto front
+    plt.figure(figsize=(48 / 5, 32 / 5))
+    sns.scatterplot(
+        runs_data,
+        x="thermal_fitness",
+        y="electrical_fitness",
+        color="grey",
+        marker="h",
+        s=200,
+        alpha=0.9,
+    )
+    sns.scatterplot(
+        maximal_runs,
+        x="thermal_fitness",
+        y="electrical_fitness",
+        hue="run_number",
+        palette=un_color_palette,
+        s=200,
+        alpha=0.9,
+    )
+    plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
+
     plt.show()
 
     import pdb

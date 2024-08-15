@@ -16,7 +16,10 @@ take place.
 """
 
 import functools
+import os
 import threading
+
+import pandas as pd
 
 from bayes_opt import BayesianOptimization
 
@@ -25,7 +28,62 @@ from .model_wrapper import PVTModelAssessor
 __all__ = (
     "BayesianPVTModelOptimiserSeries",
     "BayesianPVTModelOptimiserThread",
+    "MAX_RESULTS_FILENAME",
 )
+
+
+# MAX_RESULTS_FILENAME:
+#   Filename used for storing the maximum results once the optimisation has taken place.
+MAX_RESULTS_FILENAME: str = "max_runs_data.csv"
+
+# OPTIMUM_FILE_LOCK:
+#   Lock used to lock the file for storing information based on runs and fitness
+# information.
+OPTIMUM_FILE_LOCK: threading.Lock = threading.Lock()
+
+
+def _save_max_results(**kwargs) -> None:
+    """
+    Save information about the current run.
+
+    :param: args
+        Arguments to be saved.
+
+    :param: kwargs
+        Keyword arguments to be saved.
+
+    """
+
+    # Acquire the lock on saving the file.
+    OPTIMUM_FILE_LOCK.acquire()
+
+    row = pd.DataFrame(
+        {
+            "target": kwargs["target"],
+            "run_number": kwargs["run_number"],
+            **{key: [value] for key, value in kwargs["params"].items()},
+        }
+    )
+
+    try:
+        # Read any existing runs that have taken place.
+        if os.path.isfile(MAX_RESULTS_FILENAME):
+            with open(MAX_RESULTS_FILENAME, "r", encoding="UTF-8") as runs_file:
+                runs_data: pd.DataFrame | None = pd.read_csv(runs_file)
+
+        else:
+            runs_data = None
+
+        # Append the current run information.
+        runs_data = pd.concat([runs_data, row])
+
+        # Write the data to the file
+        with open(MAX_RESULTS_FILENAME, "w", encoding="UTF-8") as runs_file:
+            runs_data.to_csv(runs_file, index=None)
+
+    # Release the lock at the end of attempting to save information.
+    finally:
+        OPTIMUM_FILE_LOCK.release()
 
 
 class BayesianPVTModelOptimiserSeries:
@@ -101,7 +159,6 @@ class BayesianPVTModelOptimiserSeries:
 
         self.num_initial_points = initial_points
 
-
     def run(self) -> dict[str, dict[str, float] | float]:
         """
         Run the thread to compute a value.
@@ -115,6 +172,9 @@ class BayesianPVTModelOptimiserSeries:
         self.bayesian_optimiser.maximize(
             init_points=self.num_initial_points, n_iter=self.num_iterations
         )
+
+        # Save the maximum results to a file.
+        _save_max_results(run_number=self.run_id, **self.bayesian_optimiser.max)
 
         # Save the result and return.
         self.run_id_to_results_map[self.run_id] = (
@@ -207,5 +267,8 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
         self.bayesian_optimiser.maximize(
             init_points=self.num_initial_points, n_iter=self.num_iterations
         )
+
+        # Save the maximum results to a file.
+        _save_max_results(run_number=self.run_id, **self.bayesian_optimiser.max)
 
         self.run_id_to_results_map[self.run_id] = self.bayesian_optimiser.max
