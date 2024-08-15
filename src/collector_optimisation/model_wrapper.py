@@ -704,4 +704,9 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
             **kwargs,
         )
 
+        if electrical_fitness < 0 or thermal_fitness < 0 or weighted_fitness < 0:
+            import pdb
+
+            pdb.set_trace()
+
         return weighted_fitness
