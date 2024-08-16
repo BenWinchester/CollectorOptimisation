@@ -1,2 +1,2 @@
 bayesian-optimization>=1.5.1
-heatpanel>=1.1.2
+heatpanel>=1.1.4
