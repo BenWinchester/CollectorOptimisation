@@ -584,7 +584,7 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         temperature_data: list[float],
         wind_speed_data: list[float],
         **kwargs,
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, dict[float, SystemData]]:
         """
         Calculate the un-weighted, i.e., separate fitness for electricity and heat.
 
@@ -640,7 +640,7 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())
 
         # Return these fitnesses.
-        return electrical_fitness, thermal_fitness
+        return electrical_fitness, thermal_fitness, output_data
 
     def fitness_function(
         self,
@@ -681,13 +681,15 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         """
 
         # Calculate the unweighted fitnesses.
-        electrical_fitness, thermal_fitness = self.unweighted_fitness_function(
-            mass_flow_rate,
-            run_number,
-            solar_irradiance_data,
-            temperature_data,
-            wind_speed_data,
-            **kwargs,
+        electrical_fitness, thermal_fitness, output_data = (
+            self.unweighted_fitness_function(
+                mass_flow_rate,
+                run_number,
+                solar_irradiance_data,
+                temperature_data,
+                wind_speed_data,
+                **kwargs,
+            )
         )
 
         # Assess the fitness of the results and return.
@@ -707,6 +709,21 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         if electrical_fitness < 0 or thermal_fitness < 0 or weighted_fitness < 0:
             import pdb
 
-            pdb.set_trace()
+            pdb.set_trace(
+                header=(
+                    "Negative fitness is "
+                    ", ".join(
+                        [
+                            entry
+                            for entry in (
+                                electrical_fitness,
+                                thermal_fitness,
+                                weighted_fitness,
+                            )
+                            if entry < 0
+                        ]
+                    )
+                )
+            )
 
         return weighted_fitness
