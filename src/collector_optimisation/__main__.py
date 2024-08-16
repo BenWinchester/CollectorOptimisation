@@ -182,6 +182,13 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
         "-l", "--location", help="The name of the location to consider.", type=str
     )
     parser.add_argument(
+        "-op",
+        "--plotting-only",
+        action="store_true",
+        default=False,
+        help="Only run the plotting functionality.",
+    )
+    parser.add_argument(
         "-w",
         "--weather-sample-size",
         help="The number of weather points to sample.",
@@ -723,31 +730,36 @@ def plot_pareto_front(
     def pareto_function(x, a, b, c, d) -> float:
         return b * np.sqrt(1 - (x - d) ** 2 / a**2) + c
 
-    parameters, _ = curve_fit(
-        pareto_function,
-        maximal_runs["thermal_fitness"],
-        maximal_runs["electrical_fitness"],
-        p0=[
-            maximal_runs["thermal_fitness"].max(),
-            maximal_runs["electrical_fitness"].max(),
-            0,
-            0,
-        ],
-    )
-
-    plt.plot(
-        (
-            pareto_thermal := np.linspace(
-                maximal_runs["thermal_fitness"].min(),
+    try:
+        parameters, _ = curve_fit(
+            pareto_function,
+            maximal_runs["thermal_fitness"],
+            maximal_runs["electrical_fitness"],
+            p0=[
                 maximal_runs["thermal_fitness"].max(),
-                1000,
-            )
-        ),
-        pareto_function(pareto_thermal, *parameters),
-        "--",
-        color="grey",
-        label="Fitted Pareto front",
-    )
+                maximal_runs["electrical_fitness"].max(),
+                0,
+                0,
+            ],
+            maxfev=10000,
+        )
+
+    except RuntimeError:
+        pass
+    else:
+        plt.plot(
+            (
+                pareto_thermal := np.linspace(
+                    maximal_runs["thermal_fitness"].min(),
+                    maximal_runs["thermal_fitness"].max(),
+                    1000,
+                )
+            ),
+            pareto_function(pareto_thermal, *parameters),
+            "--",
+            color="grey",
+            label="Fitted Pareto front",
+        )
 
     sns.scatterplot(
         runs_data,
@@ -804,6 +816,11 @@ def main(unparsed_args: list[Any]) -> None:
         parsed_args.location,
         weather_sample_size=parsed_args.weather_sample_size,
     )
+
+    if parsed_args.plotting_only:
+        plot_pareto_front(optimisation_parameters, weather_data_sample)
+
+        return
 
     # # Run the Bayesian optimiser threads
     # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
@@ -871,8 +888,8 @@ def main(unparsed_args: list[Any]) -> None:
                     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
                     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
                     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-                    initial_points=6,
-                    num_iterations=20,
+                    initial_points=4,
+                    num_iterations=4,
                     run_id=index,
                 )
             )
