@@ -35,7 +35,7 @@ pv/reference_efficiency:
 
 pvt_collector/width:
   min: 0.02965517
-  max: 0.86
+  max: 0.215
 
 air_gap/thickness:
   min: 0.01

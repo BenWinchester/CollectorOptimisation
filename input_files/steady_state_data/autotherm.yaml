@@ -13,7 +13,7 @@
 #
 
 - ambient_temperature: 20  # [degC]
-  collector_input_temperature: 15  # [degC]
+  collector_input_temperature: 10  # [degC]
   irradiance: 1000  # [W/m^2]
   mass_flow_rate: 1.72  # [l/min]
   wind_speed: 5  # [m/s]
