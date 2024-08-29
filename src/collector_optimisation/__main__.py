@@ -86,6 +86,10 @@ SOLAR_FILENAME: str = "ninja_pv_{lat:.4f}_{lon:.4f}_uncorrected.csv"
 #   The name of the directory containing the weather information.
 WEATHER_DIRECTORY: str = "weather_data"
 
+# WEATHER_SAMPLE_FILENAME:
+#   The name of the weather sample file to use by default.
+WEATHER_SAMPLE_FILENAME: str = "weather_data_sample"
+
 # WIND_FILENAME:
 #   The name of the wind filename.
 WIND_FILENAME: str = "ninja_wind_{lat:.4f}_{lon:.4f}_corrected.csv"
@@ -189,6 +193,20 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
         help="Only run the plotting functionality.",
     )
     parser.add_argument(
+        "-r",
+        "--resample",
+        action="store_true",
+        default=False,
+        help="When used, will resample weather data.",
+    )
+    parser.add_argument(
+        "-wf",
+        "--weather-sample-filename",
+        default=WEATHER_SAMPLE_FILENAME,
+        help="The name of the weather-sample file to use when saving and loading data.",
+        type=str,
+    )
+    parser.add_argument(
         "-w",
         "--weather-sample-size",
         help="The number of weather points to sample.",
@@ -223,7 +241,9 @@ def _parse_files(
     base_model_input_files: list[str],
     location_name: str,
     *,
+    resample: bool = False,
     sample_type: SampleType = SampleType.DENSITY,
+    weather_sample_filename: str,
     weather_sample_size: int = 40,
 ) -> tuple[list[CollectorModelAssessor], pd.DataFrame, pd.DataFrame]:
     """
@@ -237,6 +257,9 @@ def _parse_files(
 
     :param: location_name
         The name of the location to consider.
+
+    :param: weather_sample_filename
+        The name of the weather-sample file.
 
     :param: weather_sample_size
         The sample size to use when sampling the weather data.
@@ -261,6 +284,11 @@ def _parse_files(
         ][0]
     except IndexError:
         raise
+
+    def _add_csv(filepath: str) -> str:
+        if filepath.endswith(".csv"):
+            return filepath
+        return f"{filepath}.csv"
 
     # Parse the solar and wind files for the location specified.
     with open(
@@ -302,133 +330,196 @@ def _parse_files(
     ].to_numpy()
     # modelling_weather_data["month"] = [int(entry.split("-")[1]) for entry in modelling_weather_data["time"]]
 
-    def _density_based_sampling(
-        data: np.ndarray, sample_size: int, bandwidth: float = 0.2
-    ) -> np.ndarray:
-        """
-        Performs density-based sampling on a given dataset.
+    column_headers = [
+        WeatherDataHeader.SOLAR_IRRADIANCE.value,
+        WeatherDataHeader.AMBIENT_TEMPERATURE.value,
+        WeatherDataHeader.WIND_SPEED.value,
+    ]
 
-        :param: The input data as a NumPy array.
+    # Sample the weather data if requested or required
+    weather_sample_filepath = _add_csv(
+        os.path.join(INPUT_FILES_DIRECTORY, WEATHER_DIRECTORY, WEATHER_SAMPLE_FILENAME)
+    )
 
-        :param: sample_size
-            The desired sample size.
+    if resample or not os.path.isfile(weather_sample_filepath):
 
-        Returns:
-            A NumPy array of sampled points.
+        def _density_based_sampling(
+            data: np.ndarray, sample_size: int, bandwidth: float = 0.2
+        ) -> np.ndarray:
+            """
+            Performs density-based sampling on a given dataset.
 
-        """
+            :param: The input data as a NumPy array.
 
-        # Kernel Density Estimation
-        kde = KernelDensity(kernel="gaussian", bandwidth=bandwidth)
-        kde.fit(data)
+            :param: sample_size
+                The desired sample size.
 
-        # Calculate density scores
-        density_scores = np.exp(kde.score_samples(data))
+            Returns:
+                A NumPy array of sampled points.
 
-        # Normalize density scores to probabilities
-        probabilities = density_scores / np.sum(density_scores)
+            """
 
-        # Sample points based on probabilities
-        indices = np.random.choice(
-            len(data), size=sample_size, p=probabilities, replace=False
-        )
-        sample = data[indices]
+            # Kernel Density Estimation
+            kde = KernelDensity(kernel="gaussian", bandwidth=bandwidth)
+            kde.fit(data)
 
-        return sample
+            # Calculate density scores
+            density_scores = np.exp(kde.score_samples(data))
 
-    def _weighted_grid_sampling(
-        data: np.ndarray, grid_size: int | list[int], sample_size: int
-    ) -> np.ndarray:
-        """
-        Performs grid sampling with weighted selection based on point density.
+            # Normalize density scores to probabilities
+            probabilities = density_scores / np.sum(density_scores)
 
-        :param: data
-            The input data as a NumPy array.
-
-        :param: grid_size
-            The size of the grid cells.
-
-        :param: sample_size
-            The desired sample size.
-
-        Returns:
-            A NumPy array of sampled points.
-
-        """
-
-        # Determine grid boundaries
-        min_values = np.floor(np.min(data, axis=0))
-        max_values = np.ceil(np.max(data, axis=0))
-        grid_ranges = max_values - min_values
-
-        # Create a grid of cells
-        if isinstance(grid_size, int):
-            grid_shape = (
-                np.floor(grid_ranges[0] / grid_size),
-                np.floor(grid_ranges[1] / grid_size),
-                np.floor(grid_ranges[2] / grid_size),
+            # Sample points based on probabilities
+            indices = np.random.choice(
+                len(data), size=sample_size, p=probabilities, replace=False
             )
-        else:
-            grid_shape = (
-                np.floor(grid_ranges[0] / grid_size[0]),
-                np.floor(grid_ranges[1] / grid_size[1]),
-                np.floor(grid_ranges[2] / grid_size[2]),
+            sample = data[indices]
+
+            return sample
+
+        def _weighted_grid_sampling(
+            data: np.ndarray, grid_size: int | list[int], sample_size: int
+        ) -> np.ndarray:
+            """
+            Performs grid sampling with weighted selection based on point density.
+
+            :param: data
+                The input data as a NumPy array.
+
+            :param: grid_size
+                The size of the grid cells.
+
+            :param: sample_size
+                The desired sample size.
+
+            Returns:
+                A NumPy array of sampled points.
+
+            """
+
+            # Determine grid boundaries
+            min_values = np.floor(np.min(data, axis=0))
+            max_values = np.ceil(np.max(data, axis=0))
+            grid_ranges = max_values - min_values
+
+            # Create a grid of cells
+            if isinstance(grid_size, int):
+                grid_shape = (
+                    np.floor(grid_ranges[0] / grid_size),
+                    np.floor(grid_ranges[1] / grid_size),
+                    np.floor(grid_ranges[2] / grid_size),
+                )
+            else:
+                grid_shape = (
+                    np.floor(grid_ranges[0] / grid_size[0]),
+                    np.floor(grid_ranges[1] / grid_size[1]),
+                    np.floor(grid_ranges[2] / grid_size[2]),
+                )
+
+            grid = np.zeros([int(entry) + 1 for entry in grid_shape], dtype=int)
+            grid_to_cells: collections.defaultdict[
+                tuple[int, int, int], list[tuple[float, float, float]]
+            ] = collections.defaultdict(list)
+
+            # Assign points to grid cells and store
+            for point in data:
+                cell_indices = np.floor((point - min_values) / grid_size).astype(int)
+                grid[(grid_coordinates := tuple(cell_indices))] += 1
+                grid_to_cells[grid_coordinates].append(point)
+
+            # Flatten grid to a list of (cell index, count) pairs
+            grid_flat = np.argwhere(grid > 0)
+            grid_counts = grid[grid_flat[:, 0], grid_flat[:, 1], grid_flat[:, 2]]
+
+            # Calculate probabilities based on counts
+            probabilities = grid_counts / np.sum(grid_counts)
+
+            # Sample grid cells based on probabilities
+            selected_cells = np.random.choice(
+                len(grid_flat), size=sample_size, p=probabilities, replace=False
             )
 
-        grid = np.zeros([int(entry) + 1 for entry in grid_shape], dtype=int)
-        grid_to_cells: collections.defaultdict[
-            tuple[int, int, int], list[tuple[float, float, float]]
-        ] = collections.defaultdict(list)
+            # Select random points from selected cells
+            sample = []
+            for cell_index in selected_cells:
+                grid_coordinates = tuple(grid_flat[cell_index])
+                cell_points = grid_to_cells[grid_coordinates]
+                sample.append(random.choice(cell_points))
 
-        # Assign points to grid cells and store
-        for point in data:
-            cell_indices = np.floor((point - min_values) / grid_size).astype(int)
-            grid[(grid_coordinates := tuple(cell_indices))] += 1
-            grid_to_cells[grid_coordinates].append(point)
+            return np.array(sample)
 
-        # Flatten grid to a list of (cell index, count) pairs
-        grid_flat = np.argwhere(grid > 0)
-        grid_counts = grid[grid_flat[:, 0], grid_flat[:, 1], grid_flat[:, 2]]
+        # Sample until the user is happy with the sample.
+        while input("Is the weather sample sufficient? Yes [y] or no [n]? ") not in (
+            "Yes",
+            "yes",
+            "Y",
+            "y",
+        ):
+            density_based_weather_sample = _density_based_sampling(
+                modelling_weather_array, weather_sample_size, bandwidth=0.4
+            )
+            grid_based_weather_sample = _weighted_grid_sampling(
+                modelling_weather_array, [50, 5, 1], weather_sample_size
+            )
 
-        # Calculate probabilities based on counts
-        probabilities = grid_counts / np.sum(grid_counts)
+            # Return the sampled weather data alone with the model assessors.
+            weather_sample = pd.DataFrame(
+                density_based_weather_sample
+                if sample_type == SampleType.DENSITY
+                else grid_based_weather_sample
+            )
+            weather_sample.columns = pd.Index((column_headers))
 
-        # Sample grid cells based on probabilities
-        selected_cells = np.random.choice(
-            len(grid_flat), size=sample_size, p=probabilities, replace=False
-        )
+            # Plot and display to the user.
+            sns.set_context("notebook")
+            sns.set_style("ticks")
 
-        # Select random points from selected cells
-        sample = []
-        for cell_index in selected_cells:
-            grid_coordinates = tuple(grid_flat[cell_index])
-            cell_points = grid_to_cells[grid_coordinates]
-            sample.append(random.choice(cell_points))
+            sns.set_palette(
+                [
+                    "#2CBCE0",
+                    "#0D699F",
+                ]
+            )
 
-        return np.array(sample)
+            sns.jointplot(
+                modelling_weather_data,
+                x="irradiance_total",
+                y="temperature",
+                marker="h",
+                alpha=0.2,
+                linewidth=0,
+                height=32 / 5,
+                ratio=4,
+                marginal_kws={"bins": 20},
+            )
+            ax = plt.gca()
+            ax.set_xlabel("Irradiance / W/m$^2$")
+            ax.set_ylabel("Temperature / $^\circ$C")
 
-    density_based_weather_sample = _density_based_sampling(
-        modelling_weather_array, weather_sample_size, bandwidth=0.4
-    )
-    grid_based_weather_sample = _weighted_grid_sampling(
-        modelling_weather_array, [50, 5, 1], weather_sample_size
-    )
+            plt.scatter(
+                x=weather_sample.loc[:, WeatherDataHeader.SOLAR_IRRADIANCE.value],
+                y=weather_sample.loc[:, WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+                s=100,
+                marker="H",
+                alpha=0.8,
+                linewidth=0,
+                color="C1",
+            )
 
-    # Return the sampled weather data alone with the model assessors.
-    weather_sample = pd.DataFrame(
-        density_based_weather_sample
-        if sample_type == SampleType.DENSITY
-        else grid_based_weather_sample
-    )
-    weather_sample.columns = pd.Index(
-        (
-            column_headers := [
-                WeatherDataHeader.SOLAR_IRRADIANCE.value,
-                WeatherDataHeader.AMBIENT_TEMPERATURE.value,
-                WeatherDataHeader.WIND_SPEED.value,
-            ]
-        )
-    )
+            plt.show()
+
+        print("Sample approved, continuing...")
+
+        with open(
+            weather_sample_filepath, "w", encoding="UTF-8"
+        ) as weather_sample_file:
+            weather_sample.to_csv(weather_sample_file, index=None)
+
+    else:
+        with open(
+            weather_sample_filepath, "r", encoding="UTF-8"
+        ) as weather_sample_file:
+            weather_sample = pd.read_csv(weather_sample_file)
 
     ###################################################################
     # Code for plotting and visualising the weather-data distribution #
@@ -786,7 +877,11 @@ def plot_pareto_front(
     plt.ylabel("Electrical fitness / kWh")
     plt.legend(title="Run label")
 
-    plt.savefig("pareto_front.pdf")
+    plt.savefig(
+        "pareto_front.pdf",
+        bbox_inches="tight",
+        pad_inches=0,
+    )
 
     plt.show()
 
@@ -814,6 +909,8 @@ def main(unparsed_args: list[Any]) -> None:
         base_collector_filepath,
         base_model_input_filepaths,
         parsed_args.location,
+        resample=parsed_args.resample,
+        weather_sample_filename=parsed_args.weather_sample_filename,
         weather_sample_size=parsed_args.weather_sample_size,
     )
 
@@ -888,8 +985,8 @@ def main(unparsed_args: list[Any]) -> None:
                     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
                     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
                     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-                    initial_points=4,
-                    num_iterations=4,
+                    initial_points=16,
+                    num_iterations=32,
                     run_id=index,
                 )
             )
