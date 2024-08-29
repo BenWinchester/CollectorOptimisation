@@ -16,15 +16,27 @@
 pvt:
   - electrical_weighting: 0.0
     thermal_weighting: 1.0
-  # - electrical_weighting: 1.0
-  #   thermal_weighting: 5.0
+  - electrical_weighting: 1.0
+    thermal_weighting: 11.0
+  - electrical_weighting: 1.0
+    thermal_weighting: 5.0
+  - electrical_weighting: 1.0
+    thermal_weighting: 3.0
   - electrical_weighting: 1.0
     thermal_weighting: 2.0
-  # - electrical_weighting: 1.0
-  #   thermal_weighting: 1.0
+  - electrical_weighting: 5.0
+    thermal_weighting: 7.0
+  - electrical_weighting: 1.0
+    thermal_weighting: 1.0
+  - electrical_weighting: 7.0
+    thermal_weighting: 5.0
   - electrical_weighting: 2.0
     thermal_weighting: 1.0
-  # - electrical_weighting: 5.0
-  #   thermal_weighting: 1.0
+  - electrical_weighting: 3.0
+    thermal_weighting: 1.0
+  - electrical_weighting: 5.0
+    thermal_weighting: 1.0
+  - electrical_weighting: 11.0
+    thermal_weighting: 1.0
   - electrical_weighting: 1.0
     thermal_weighting: 0.0
