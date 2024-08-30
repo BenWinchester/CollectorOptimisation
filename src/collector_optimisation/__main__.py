@@ -35,7 +35,7 @@ import yaml
 from sklearn.neighbors import KernelDensity
 from tqdm import tqdm
 
-from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
+from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
 from .bayesian_optimiser import (
     BayesianPVTModelOptimiserSeries,
     BayesianPVTModelOptimiserThread,
@@ -186,7 +186,7 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
         "-l", "--location", help="The name of the location to consider.", type=str
     )
     parser.add_argument(
-        "-op",
+        "-po",
         "--plotting-only",
         action="store_true",
         default=False,
@@ -233,12 +233,30 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
         nargs="+",
     )
 
+    plotting_only_args = parser.add_argument_group(
+        "Plotting-only arguments",
+        "Parameters that can be used when plotting to load data for a specific date.",
+    )
+    plotting_only_args.add_argument(
+        "-d",
+        "--date",
+        default=None,
+        help="The date to use when loading results for plotting.",
+    )
+    plotting_only_args.add_argument(
+        "-t",
+        "--time",
+        default=None,
+        help="The time to use when loading resiult for plotting.",
+    )
+
     return parser.parse_args(args)
 
 
 def _parse_files(
     base_collector_filename: str,
     base_model_input_files: list[str],
+    date_and_time: DateAndTime,
     location_name: str,
     *,
     resample: bool = False,
@@ -255,8 +273,17 @@ def _parse_files(
     :param: base_model_input_files
         A `list` of filenames which go into the underlying model.
 
+    :param: date_and_time
+        The date and time to use when saving files.
+
     :param: location_name
         The name of the location to consider.
+
+    :param: resample
+        If specified, the weather data will be resampled.
+
+    :param: sample_type
+        The type of sampling to use.
 
     :param: weather_sample_filename
         The name of the weather-sample file.
@@ -560,7 +587,7 @@ def _parse_files(
         color="C1",
     )
     plt.savefig(
-        f"scatter_plot_{sample_type.value}_weather.pdf",
+        f"scatter_plot_{sample_type.value}_weather_{date_and_time.date}_{date_and_time.time}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
@@ -606,7 +633,11 @@ def _parse_files(
     ax.set_ylabel("Temperature / $^\circ$C")
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
-    plt.savefig("hex_plot_weather_data.pdf", bbox_inches="tight", pad_inches=0)
+    plt.savefig(
+        f"hex_plot_weather_data_{date_and_time.date}_{date_and_time.time}.pdf",
+        bbox_inches="tight",
+        pad_inches=0,
+    )
 
     # modelling_weather_data["rounded_wind_speed"] = [
     #     int(entry) for entry in modelling_weather_data["wind_speed"]
@@ -679,6 +710,7 @@ def _parse_files(
                 ](
                     base_collector_filename,
                     base_model_input_files,
+                    date_and_time,
                     location.name,
                     f"{model_name}_with_{weighting_calculator.name}",
                     weighting_calculator=weighting_calculator,
@@ -764,11 +796,15 @@ def _validate_args(parsed_args: argparse.Namespace) -> tuple[str, list[str]]:
 
 
 def plot_pareto_front(
+    date_and_time: DateAndTime,
     optimisation_parameters: dict[Any, tuple[Any, Any]],
     weather_data_sample: pd.DataFrame,
 ) -> None:
     """
     Plots the Pareto front.
+
+    :param: date_and_time
+        The date and time to use when parsing the information.
 
     :param: optimisation_parameters
         The optimisation parameters
@@ -801,10 +837,15 @@ def plot_pareto_front(
     )
 
     # Open the data and parse the values.
-    with open(MAX_RESULTS_FILENAME, "r") as max_results_file:
+    with open(
+        MAX_RESULTS_FILENAME.format(date=date_and_time.date, time=date_and_time.time),
+        "r",
+    ) as max_results_file:
         max_results = pd.read_csv(max_results_file)
 
-    with open(RUNS_DATA_FILENAME, "r") as runs_data_file:
+    with open(
+        RUNS_DATA_FILENAME.format(date=date_and_time.date, time=date_and_time.time), "r"
+    ) as runs_data_file:
         runs_data = pd.read_csv(runs_data_file)
 
     maximal_runs = pd.DataFrame(
@@ -878,7 +919,7 @@ def plot_pareto_front(
     plt.legend(title="Run label")
 
     plt.savefig(
-        "pareto_front.pdf",
+        f"pareto_front_{date_and_time.date}_{date_and_time.time}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
@@ -899,6 +940,9 @@ def main(unparsed_args: list[Any]) -> None:
     parsed_args = _parse_args(unparsed_args)
     (base_collector_filepath, base_model_input_filepaths) = _validate_args(parsed_args)
 
+    # Determine the date and time if not provided.
+    date_and_time = DateAndTime(parsed_args.date, parsed_args.time)
+
     # Open the configuration files necessary for the run.
     (
         collector_model_assessors,
@@ -908,6 +952,7 @@ def main(unparsed_args: list[Any]) -> None:
     ) = _parse_files(
         base_collector_filepath,
         base_model_input_filepaths,
+        date_and_time,
         parsed_args.location,
         resample=parsed_args.resample,
         weather_sample_filename=parsed_args.weather_sample_filename,
@@ -915,12 +960,13 @@ def main(unparsed_args: list[Any]) -> None:
     )
 
     if parsed_args.plotting_only:
-        plot_pareto_front(optimisation_parameters, weather_data_sample)
+        plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample)
 
         return
 
     # # Run the Bayesian optimiser threads
     # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
     #     optimisation_parameters,
     #     collector_model_assessors[0],
     #     (collector_model_index_to_results_map := {}),
@@ -934,6 +980,7 @@ def main(unparsed_args: list[Any]) -> None:
     # bayesian_assessor_0.run()
 
     # bayesian_assessor_1 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
     #     optimisation_parameters,
     #     collector_model_assessors[1],
     #     (collector_model_index_to_results_map := {}),
@@ -947,6 +994,7 @@ def main(unparsed_args: list[Any]) -> None:
     # bayesian_assessor_1.run()
 
     # bayesian_assessor_2 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
     #     optimisation_parameters,
     #     collector_model_assessors[2],
     #     (collector_model_index_to_results_map := {}),
@@ -960,6 +1008,7 @@ def main(unparsed_args: list[Any]) -> None:
     # bayesian_assessor_2.run()
 
     # bayesian_assessor_3 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
     #     optimisation_parameters,
     #     collector_model_assessors[3],
     #     (collector_model_index_to_results_map := {}),
@@ -979,6 +1028,7 @@ def main(unparsed_args: list[Any]) -> None:
         if collector_model_assessor.collector_type == CollectorType.PVT:
             bayesian_assessors.append(
                 bayesian_assessor := BayesianPVTModelOptimiserThread(
+                    date_and_time,
                     optimisation_parameters,
                     collector_model_assessor,
                     collector_model_index_to_results_map,

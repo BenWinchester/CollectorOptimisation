@@ -23,6 +23,7 @@ import pandas as pd
 
 from bayes_opt import BayesianOptimization
 
+from .__utils__ import DateAndTime
 from .model_wrapper import PVTModelAssessor
 
 __all__ = (
@@ -34,7 +35,7 @@ __all__ = (
 
 # MAX_RESULTS_FILENAME:
 #   Filename used for storing the maximum results once the optimisation has taken place.
-MAX_RESULTS_FILENAME: str = "max_runs_data.csv"
+MAX_RESULTS_FILENAME: str = "max_runs_data_{date}_{time}.csv"
 
 # OPTIMUM_FILE_LOCK:
 #   Lock used to lock the file for storing information based on runs and fitness
@@ -42,7 +43,7 @@ MAX_RESULTS_FILENAME: str = "max_runs_data.csv"
 OPTIMUM_FILE_LOCK: threading.Lock = threading.Lock()
 
 
-def _save_max_results(**kwargs) -> None:
+def _save_max_results(*, date_and_time: DateAndTime, **kwargs) -> None:
     """
     Save information about the current run.
 
@@ -67,8 +68,18 @@ def _save_max_results(**kwargs) -> None:
 
     try:
         # Read any existing runs that have taken place.
-        if os.path.isfile(MAX_RESULTS_FILENAME):
-            with open(MAX_RESULTS_FILENAME, "r", encoding="UTF-8") as runs_file:
+        if os.path.isfile(
+            MAX_RESULTS_FILENAME.format(
+                date=date_and_time.date, time=date_and_time.time
+            )
+        ):
+            with open(
+                MAX_RESULTS_FILENAME.format(
+                    date=date_and_time.date, time=date_and_time.time
+                ),
+                "r",
+                encoding="UTF-8",
+            ) as runs_file:
                 runs_data: pd.DataFrame | None = pd.read_csv(runs_file)
 
         else:
@@ -78,7 +89,13 @@ def _save_max_results(**kwargs) -> None:
         runs_data = pd.concat([runs_data, row])
 
         # Write the data to the file
-        with open(MAX_RESULTS_FILENAME, "w", encoding="UTF-8") as runs_file:
+        with open(
+            MAX_RESULTS_FILENAME.format(
+                date=date_and_time.date, time=date_and_time.time
+            ),
+            "w",
+            encoding="UTF-8",
+        ) as runs_file:
             runs_data.to_csv(runs_file, index=None)
 
     # Release the lock at the end of attempting to save information.
@@ -106,6 +123,7 @@ class BayesianPVTModelOptimiserSeries:
 
     def __init__(
         self,
+        date_and_time: DateAndTime,
         optimisation_parameters: dict[str, tuple[float, float]],
         pvt_model_assessor: PVTModelAssessor,
         run_id_to_results_map: dict[int, dict[str, dict[str, float] | float]],
@@ -120,6 +138,9 @@ class BayesianPVTModelOptimiserSeries:
     ) -> None:
         """
         Instantiate the thread.
+
+        :param: date_and_time
+            The date and time information to use when saving model results.
 
         :param: optimisation_parameters
             The optimisation parameters used for specifying the bounds of the optimisation.
@@ -136,6 +157,7 @@ class BayesianPVTModelOptimiserSeries:
 
         """
 
+        self.date_and_time = date_and_time
         self.num_iterations = num_iterations
         self.optimisation_parameters = optimisation_parameters
         self.pvt_model_assessor = pvt_model_assessor
@@ -174,7 +196,11 @@ class BayesianPVTModelOptimiserSeries:
         )
 
         # Save the maximum results to a file.
-        _save_max_results(run_number=self.run_id, **self.bayesian_optimiser.max)
+        _save_max_results(
+            date_and_time=self.date_and_time,
+            run_number=self.run_id,
+            **self.bayesian_optimiser.max,
+        )
 
         # Save the result and return.
         self.run_id_to_results_map[self.run_id] = (
@@ -203,6 +229,7 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
 
     def __init__(
         self,
+        date_and_time: DateAndTime,
         optimisation_parameters: dict[str, tuple[float, float]],
         pvt_model_assessor: PVTModelAssessor,
         run_id_to_results_map: dict[str, dict[str, float] | float],
@@ -217,6 +244,9 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
     ) -> None:
         """
         Instantiate the thread.
+
+        :param: date_and_time
+            The date and time information to use when saving model results.
 
         :param: optimisation_parameters
             The optimisation parameters used for specifying the bounds of the optimisation.
@@ -233,6 +263,7 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
 
         """
 
+        self.date_and_time = date_and_time
         self.num_iterations = num_iterations
         self.optimisation_parameters = optimisation_parameters
         self.pvt_model_assessor = pvt_model_assessor
@@ -269,6 +300,10 @@ class BayesianPVTModelOptimiserThread(threading.Thread):
         )
 
         # Save the maximum results to a file.
-        _save_max_results(run_number=self.run_id, **self.bayesian_optimiser.max)
+        _save_max_results(
+            date_and_time=self.date_and_time,
+            run_number=self.run_id,
+            **self.bayesian_optimiser.max,
+        )
 
         self.run_id_to_results_map[self.run_id] = self.bayesian_optimiser.max

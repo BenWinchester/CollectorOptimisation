@@ -33,7 +33,7 @@ import yaml
 from pvt_model import main as pvt_model_main
 from pvt_model import SystemData
 
-from .__utils__ import INPUT_FILES_DIRECTORY, WeatherDataHeader
+from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
 
 # FILE_LOCK:
 #   Lock used to lock the file for storing information based on runs and fitness
@@ -51,7 +51,7 @@ MAX_PARALLEL_RUNS: int = 10000
 
 # RUNS_DATA_FILENAME:
 #   The name of the runs data file.
-RUNS_DATA_FILENAME: str = "runs_data.csv"
+RUNS_DATA_FILENAME: str = "runs_data_{date}_{time}.csv"
 
 # TEMPORARY_FILE_DIRECTORY:
 #   The name of the temporary file directory to use.
@@ -108,7 +108,7 @@ class Capturing(list):
         # sys.stderr = self._stderr
 
 
-def _save_current_run(**kwargs) -> None:
+def _save_current_run(*, date_and_time: DateAndTime, **kwargs) -> None:
     """
     Save information about the current run.
 
@@ -127,8 +127,16 @@ def _save_current_run(**kwargs) -> None:
 
     try:
         # Read any existing runs that have taken place.
-        if os.path.isfile(RUNS_DATA_FILENAME):
-            with open(RUNS_DATA_FILENAME, "r", encoding="UTF-8") as runs_file:
+        if os.path.isfile(
+            RUNS_DATA_FILENAME.format(date=date_and_time.date, time=date_and_time.time)
+        ):
+            with open(
+                RUNS_DATA_FILENAME.format(
+                    date=date_and_time.date, time=date_and_time.time
+                ),
+                "r",
+                encoding="UTF-8",
+            ) as runs_file:
                 runs_data: pd.DataFrame | None = pd.read_csv(runs_file)
 
         else:
@@ -138,7 +146,11 @@ def _save_current_run(**kwargs) -> None:
         runs_data = pd.concat([runs_data, row])
 
         # Write the data to the file
-        with open(RUNS_DATA_FILENAME, "w", encoding="UTF-8") as runs_file:
+        with open(
+            RUNS_DATA_FILENAME.format(date=date_and_time.date, time=date_and_time.time),
+            "w",
+            encoding="UTF-8",
+        ) as runs_file:
             runs_data.to_csv(runs_file, index=None)
 
     # Release the lock at the end of attempting to save information.
@@ -473,6 +485,7 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         self,
         base_pvt_filepath: str,
         base_model_input_files: list[str],
+        date_and_time: DateAndTime,
         location_name: str,
         output_filename: str,
         *,
@@ -486,6 +499,9 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         :param: base_steadystate_filepath
             The base steady-state filepath from which new runs will be generated.
+
+        :param: date_and_time
+            The date and time to use when saving results.
 
         :param: location_name
             Deprecated---the location name utilised for the weather data setup, required
@@ -515,6 +531,7 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         self.base_pvt_filepath: str = base_pvt_filepath
         self.base_steady_state_filepath: str = base_steadystate_filepath
+        self.date_and_time = date_and_time
         self.model_args: list[str] = [
             "--skip-analysis",
             "--output",
@@ -698,8 +715,9 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         )
 
         _save_current_run(
-            fitness=weighted_fitness,
+            date_and_time=self.date_and_time,
             electrical_fitness=electrical_fitness,
+            fitness=weighted_fitness,
             thermal_fitness=thermal_fitness,
             mass_flow_rate=mass_flow_rate,
             run_number=run_number,
