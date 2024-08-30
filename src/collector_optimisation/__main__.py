@@ -964,7 +964,7 @@ def main(unparsed_args: list[Any]) -> None:
 
         return
 
-    # # Run the Bayesian optimiser threads
+    # Run the Bayesian optimiser threads
     # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
     #     date_and_time,
     #     optimisation_parameters,

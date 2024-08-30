@@ -291,12 +291,20 @@ def temporary_steady_state_file(
     # Generate a dataframe to contain the information.
     data_frame = pd.DataFrame(
         {
-            WeatherDataHeader.SOLAR_IRRADIANCE.value: solar_irradiance_data,
-            WeatherDataHeader.AMBIENT_TEMPERATURE.value: temperature_data,
-            WeatherDataHeader.WIND_SPEED.value: wind_speed_data,
-            "mass_flow_rate": [mass_flow_rate] * len(wind_speed_data),
+            WeatherDataHeader.SOLAR_IRRADIANCE.value: solar_irradiance_data.repeat(
+                len(base_steady_state_data)
+            ),
+            WeatherDataHeader.AMBIENT_TEMPERATURE.value: temperature_data.repeat(
+                len(base_steady_state_data)
+            ),
+            WeatherDataHeader.WIND_SPEED.value: wind_speed_data.repeat(
+                len(base_steady_state_data)
+            ),
+            "mass_flow_rate": [mass_flow_rate]
+            * len(wind_speed_data)
+            * len(base_steady_state_data),
             "collector_input_temperature": [
-                base_steady_state_data[0]["collector_input_temperature"]
+                entry["collector_input_temperature"] for entry in base_steady_state_data
             ]
             * len(wind_speed_data),
         }
