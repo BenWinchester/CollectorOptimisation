@@ -161,6 +161,7 @@ def _save_current_run(*, date_and_time: DateAndTime, **kwargs) -> None:
 @contextmanager
 def temporary_collector_file(
     base_collector_filepath: str,
+    date_and_time: DateAndTime,
     updates_to_collector_design_parameters: dict[str, float],
     unique_id: int = random.randint(0, MAX_PARALLEL_RUNS),
 ) -> Generator[str, None, None]:
@@ -233,7 +234,8 @@ def temporary_collector_file(
             (
                 filename := os.path.join(
                     TEMPORARY_FILE_DIRECTORY,
-                    f"{os.path.basename(base_collector_filepath).split('.')[0]}_{unique_id}.yaml",
+                    f"{os.path.basename(base_collector_filepath).split('.')[0]}_"
+                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}.yaml",
                 )
             ),
             "w",
@@ -253,6 +255,7 @@ def temporary_collector_file(
 @contextmanager
 def temporary_steady_state_file(
     base_steady_state_filepath: str,
+    date_and_time: DateAndTime,
     mass_flow_rate: float,
     solar_irradiance_data: list[float],
     temperature_data: list[float],
@@ -316,7 +319,8 @@ def temporary_steady_state_file(
             (
                 filename := os.path.join(
                     TEMPORARY_FILE_DIRECTORY,
-                    f"{os.path.basename(base_steady_state_filepath).split('.')[0]}_{unique_id}.csv",
+                    f"{os.path.basename(base_steady_state_filepath).split('.')[0]}_"
+                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}.csv",
                 )
             ),
             "w",
@@ -643,10 +647,11 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         # Make temporary files as needed based on the inputs for the run.
         with temporary_collector_file(
-            self.base_pvt_filepath, kwargs, run_number
+            self.base_pvt_filepath, self.date_and_time, kwargs, run_number
         ) as temp_pvt_filepath:
             with temporary_steady_state_file(
                 self.base_steady_state_filepath,
+                self.date_and_time,
                 mass_flow_rate,
                 solar_irradiance_data,
                 temperature_data,
