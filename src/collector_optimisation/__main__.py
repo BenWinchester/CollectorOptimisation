@@ -185,6 +185,8 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
     parser.add_argument(
         "-l", "--location", help="The name of the location to consider.", type=str
     )
+    parser.add_argument("-i", "--initial-points", default=16, help="The number of initial points to use.", type=int)
+    parser.add_argument("-n", "--num-iterations", default=128, help="The number of iterations to carry out.", type=int)
     parser.add_argument(
         "-po",
         "--plotting-only",
@@ -1035,8 +1037,8 @@ def main(unparsed_args: list[Any]) -> None:
                     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
                     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
                     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-                    initial_points=16,
-                    num_iterations=128,
+                    initial_points=parsed_args.initial_points,
+                    num_iterations=parsed_args.num_iterations,
                     run_id=index,
                 )
             )
