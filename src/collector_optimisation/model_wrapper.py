@@ -738,22 +738,18 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         )
 
         if electrical_fitness < 0 or thermal_fitness < 0 or weighted_fitness < 0:
-            import pdb
-
-            pdb.set_trace(
-                header=(
-                    "Negative fitness is "
-                    ", ".join(
-                        [
-                            entry
-                            for entry in (
-                                electrical_fitness,
-                                thermal_fitness,
-                                weighted_fitness,
-                            )
-                            if entry < 0
-                        ]
-                    )
+            print(
+                "Negative fitness is "
+                ", ".join(
+                    [
+                        str(entry)
+                        for entry in (
+                            electrical_fitness,
+                            thermal_fitness,
+                            weighted_fitness,
+                        )
+                        if entry < 0
+                    ]
                 )
             )
 

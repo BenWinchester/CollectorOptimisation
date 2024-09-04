@@ -1036,7 +1036,7 @@ def main(unparsed_args: list[Any]) -> None:
                     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
                     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
                     initial_points=16,
-                    num_iterations=32,
+                    num_iterations=128,
                     run_id=index,
                 )
             )
@@ -1045,7 +1045,7 @@ def main(unparsed_args: list[Any]) -> None:
     for bayesian_assessor in bayesian_assessors:
         bayesian_assessor.join()
 
-    plot_pareto_front(optimisation_parameters, weather_data_sample)
+    plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample)
 
     import pdb
 
