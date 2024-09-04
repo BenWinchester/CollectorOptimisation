@@ -1,0 +1,54 @@
+%figure 1 
+% figure;
+% x0=0;
+% y0=0;
+% width=560*1.5;
+% height=420*1.5;
+% 
+% 
+% set(gcf,'position',[x0,y0,width,height]);
+% mesheff=pcolor(cutL,cutH,eff_el_CdTe);hold on;
+% 
+% shading interp;
+% 
+% axis([280 1000 280 1500]);
+% 
+% xlabel('{Lower cut} [nm]','FontSize',16);
+% ylabel('{Higher cut [nm]}','FontSize',16);
+% 
+% eff=colorbar;
+% title(eff,'Efficiency','FontSize',16);
+% 
+% %grid on;
+% 
+% set(gcf,'color','white');
+% set(gca, 'LineWidth',1);
+
+%figure 2
+
+figure;
+x0=0;
+y0=0;
+width=560*1.5;
+height=420*1.5;
+set(gcf,'position',[x0,y0,width,height]);
+%cutH(1,:):cutl=280 nm    cutH(13,:):cutl=400 nm
+cutl1=400;
+Ncutl=(cutl1-280)/10+1;
+
+Plotspectr(1)=plot(cutH(Ncutl,:),eff_el_Si(Ncutl,:),'-','Color',[0.8500 0.3250 0.0980],'linewidth',2,'DisplayName','{\it\eta}_{el-Silicon}');hold on;
+Plotspectr(2)=plot(cutH(Ncutl,:),eff_el_CdTe(Ncutl,:),'-','Color',[0 0.4470 0.7410],'linewidth',2,'DisplayName','{\it\eta}_{el-CdTe}');hold on;
+Plotspectr(3)=plot(cutH(Ncutl,:),eff_th(Ncutl,:),'-','Color',[0 0 0],'linewidth',2,'DisplayName','{\it\eta}_{th}');hold on;
+Plotspectr(4)=plot(cutH(Ncutl,:),eff_el_diff(Ncutl,:),'--','Color',[0 0 0],'linewidth',2,'DisplayName','{\it\eta}_{el-Silicon}-{\it\eta}_{el-CdTe}');
+% Plotspectr(5)=plot(Egplot(5,:),Effplot(5,:),'-o','Color',[0.8500 0.3250 0.0980],'linewidth',2,'DisplayName','{GaP: 2.25 ev}');hold on;
+% Plotspectr(6)=plot(Egplot(6,:),Effplot(6,:),'-o','Color',[0 0.4470 0.7410],'linewidth',2,'DisplayName','{ZnO: 3.20 ev}');
+
+axis([200 1500 -0.1 0.5]);
+xlabel('{Higher cut} [nm]','FontSize',16);
+ylabel('{Efficiency [-]}','FontSize',16);
+legenspectr=legend(Plotspectr,'Location','northwest');legend boxon;
+set(legenspectr,'FontSize',18);
+set(gca,'Layer','Top','XColor','k','YColor','k','linewidth',0.5,'FontSize',16,'XTick',[0:200:1500],'YTick',[-1:0.05:1],'TickDir','in','box','off');
+set(gcf,'color','white')
+grid on;
+box on;

@@ -1,0 +1,17 @@
+function [Tr,Rel,Abs]=select_filter(glass);
+
+    if strcmp(glass,'low_iron_glass')==1
+      Tr=xlsread('data', 'optical properties', 'H3:H2004')/100; 
+      Rel=xlsread('data', 'optical properties', 'I3:I2004')/100; 
+      Abs=xlsread('data', 'optical properties', 'J3:J2004')/100; 
+    end
+
+    if strcmp(glass,'heat_absorb_glass')==1
+      Trgfl2=xlsread('data', 'optical properties', 'M3:M2004')/100; % transmissivity of the bottom glass of the filter
+Relfl2=xlsread('data', 'optical properties', 'N3:N2004')/100; % reflectance of the bottom glass of the filter
+Abgfl2=xlsread('data', 'optical properties', 'O3:O2004')/100; % absorptivity of the top bottom glass of the filter
+    end
+
+
+
+end
