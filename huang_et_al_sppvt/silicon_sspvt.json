@@ -11,5 +11,5 @@
     "adhesive/thermal_conductivity": 0.85,
     "adhesive/thickness": 0.00005,
     "insulation/thermal_conductivity": 0.035,
-    "insulation/thickness": 0.05,
+    "insulation/thickness": 0.05
 }
