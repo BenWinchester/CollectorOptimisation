@@ -22,8 +22,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
 
     % Default values for the parameters
     if nargin < 7
-        mfl=repmat(0.01*Ac, 1, 5);%mass flow rate of the filter fluid
-        mc=repmat(0.01*Ac, 1, 5);%mass flow rate of the bottom coolant
+  
         if nargin < 5
             GG=[200 400 600 800 1000];
             Vwind=[1, 1, 1, 1, 1];
@@ -31,6 +30,8 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
             Tcin=[300, 300, 300, 300, 300];%bottom coolant inlet temperature 
             Tflin=[300,310,320,330,345,355];%filter coolant inlet temperature
         end
+        mfl=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the filter fluid
+        mc=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the bottom coolant
     end
 
     Tsky=0.0552.*Ta.^1.5; % sky temp
