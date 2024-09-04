@@ -82,6 +82,10 @@ PARETO_FRONT_FILENAME: str = "pareto_front.yaml"
 #   The name of the solar filename.
 SOLAR_FILENAME: str = "ninja_pv_{lat:.4f}_{lon:.4f}_uncorrected.csv"
 
+# THERMODYNAMIC_LIMIT:
+#   A thermodynamic limit on efficiency placed on solar-thermal collectors.
+THERMODYNAMIC_LIMIT: float = 1.0
+
 # WEATHER_DIRECTORY:
 #   The name of the directory containing the weather information.
 WEATHER_DIRECTORY: str = "weather_data"
@@ -801,6 +805,7 @@ def plot_pareto_front(
     date_and_time: DateAndTime,
     optimisation_parameters: dict[Any, tuple[Any, Any]],
     weather_data_sample: pd.DataFrame,
+    num_repeats: int = 1,
 ) -> None:
     """
     Plots the Pareto front.
@@ -814,6 +819,10 @@ def plot_pareto_front(
     :param: werather_data_sample
         The weather-data sample to use.
 
+    :param: num_repeats
+        The number of steady-state runs that took place, and so how many additional runs
+        took place for each data point.
+
     """
 
     # Ensure all previous plots have closed.
@@ -822,102 +831,108 @@ def plot_pareto_front(
     # Setup a new figure for the Parety front.
     plt.figure(figsize=(48 / 5, 32 / 5))
 
-    # Determine the values to plot the Pareto front
-    average_solar_irradiance = np.sum(
-        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value]
-    ) / len(weather_data_sample)
-    max_collector_size = 1.4276
-    max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
-
-    thermal_values = np.linspace(
-        0, (max_energy_in := max_collector_size * average_solar_irradiance), 100
-    )
-    electrical_values = (
-        max_energy_in
-        * max_electrical_efficiency
-        * np.sqrt(1 - thermal_values**2 / max_energy_in**2)
-    )
-
     # Open the data and parse the values.
-    with open(
-        MAX_RESULTS_FILENAME.format(date=date_and_time.date, time=date_and_time.time),
-        "r",
-    ) as max_results_file:
-        max_results = pd.read_csv(max_results_file)
+    try:
+        with open(
+            MAX_RESULTS_FILENAME.format(date=date_and_time.date, time=date_and_time.time),
+            "r",
+        ) as max_results_file:
+            max_results: pd.DataFrame | None = pd.read_csv(max_results_file)
+    except FileNotFoundError:
+        max_results = None
 
     with open(
         RUNS_DATA_FILENAME.format(date=date_and_time.date, time=date_and_time.time), "r"
     ) as runs_data_file:
         runs_data = pd.read_csv(runs_data_file)
 
-    maximal_runs = pd.DataFrame(
-        [
-            row[1]
-            for row in runs_data.iterrows()
-            if row[1]["fitness"] in max_results["target"].values
-        ]
-    )
-
-    maximal_runs = maximal_runs.sort_values(by="run_number")
-
-    # plt.plot(maximal_runs["thermal_fitness"], maximal_runs["electrical_fitness"], "--", color="grey")
-    def pareto_function(x, a, b, c, d) -> float:
-        return b * np.sqrt(1 - (x - d) ** 2 / a**2) + c
-
-    try:
-        parameters, _ = curve_fit(
-            pareto_function,
-            maximal_runs["thermal_fitness"],
-            maximal_runs["electrical_fitness"],
-            p0=[
-                maximal_runs["thermal_fitness"].max(),
-                maximal_runs["electrical_fitness"].max(),
-                0,
-                0,
-            ],
-            maxfev=10000,
+    if max_results is not None:
+        maximal_runs = pd.DataFrame(
+            [
+                row[1]
+                for row in runs_data.iterrows()
+                if row[1]["fitness"] in max_results["target"].values
+            ]
         )
 
-    except RuntimeError:
-        pass
-    else:
-        plt.plot(
-            (
-                pareto_thermal := np.linspace(
-                    maximal_runs["thermal_fitness"].min(),
+        maximal_runs = maximal_runs.sort_values(by="run_number")
+
+        # plt.plot(maximal_runs["thermal_fitness"], maximal_runs["electrical_fitness"], "--", color="grey")
+        def pareto_function(x, a, b, c, d) -> float:
+            return b * np.sqrt(1 - (x - d) ** 2 / a**2) + c
+
+        try:
+            parameters, _ = curve_fit(
+                pareto_function,
+                maximal_runs["thermal_fitness"],
+                maximal_runs["electrical_fitness"],
+                p0=[
                     maximal_runs["thermal_fitness"].max(),
-                    1000,
-                )
-            ),
-            pareto_function(pareto_thermal, *parameters),
-            "--",
-            color="grey",
-            label="Fitted Pareto front",
-        )
+                    maximal_runs["electrical_fitness"].max(),
+                    0,
+                    0,
+                ],
+                maxfev=10000,
+            )
+
+        except RuntimeError:
+            pass
+        else:
+            plt.plot(
+                (
+                    pareto_thermal := np.linspace(
+                        maximal_runs["thermal_fitness"].min(),
+                        maximal_runs["thermal_fitness"].max(),
+                        1000,
+                    )
+                ),
+                pareto_function(pareto_thermal, *parameters),
+                "--",
+                color="grey",
+                label="Fitted Pareto front",
+            )
+
+    # Normalise the runs data based on the total input values
+    cumulative_solar_irradiance = np.sum(
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value]
+    )
+    average_solar_irradiance = cumulative_solar_irradiance / len(weather_data_sample)
+    max_collector_size = 1.4276
+    max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
+
+    energy_input = runs_data["pvt_collector/width"] * cumulative_solar_irradiance * num_repeats
+    runs_data["normalised_electrical_fitness"] = runs_data["electrical_fitness"] / (max_electrical_efficiency * energy_input)
+    runs_data["normalised_thermal_fitness"] = runs_data["thermal_fitness"] / (THERMODYNAMIC_LIMIT * energy_input)
+
+    electrical_values = np.linspace(0, 1, 100)
+    thermal_values = [1 - entry for entry in electrical_values]
 
     sns.scatterplot(
         runs_data,
-        x="thermal_fitness",
-        y="electrical_fitness",
+        x="normalised_thermal_fitness",
+        y="normalised_electrical_fitness",
         color="grey",
         marker="h",
         s=200,
         alpha=0.5,
         linewidth=0,
     )
-    sns.scatterplot(
-        maximal_runs,
-        x="thermal_fitness",
-        y="electrical_fitness",
-        hue="run_number",
-        palette=un_color_palette,
-        s=200,
-        alpha=0.8,
-        marker="h",
-    )
+
+    if max_results is not None:
+        sns.scatterplot(
+            maximal_runs,
+            x="normalised_thermal_fitness",
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=0.8,
+            marker="h",
+        )
+
     plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
-    plt.xlabel("Thermal fitness / kWh")
-    plt.ylabel("Electrical fitness / kWh")
+    plt.xlabel("Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$")
+    plt.ylabel("Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$")
     plt.legend(title="Run label")
 
     plt.savefig(
@@ -962,7 +977,11 @@ def main(unparsed_args: list[Any]) -> None:
     )
 
     if parsed_args.plotting_only:
-        plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample)
+        # Determine the number of steady-state runs that took place.
+        with open(base_model_input_filepaths[0], "r") as steady_state_file:
+            num_repeats = len(yaml.safe_load(steady_state_file))
+
+        plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample, num_repeats)
 
         return
 
@@ -1046,6 +1065,10 @@ def main(unparsed_args: list[Any]) -> None:
 
     for bayesian_assessor in bayesian_assessors:
         bayesian_assessor.join()
+
+    # Determine the number of steady-state runs that took place.
+    with open(base_model_input_filepaths[0], "r") as steady_state_file:
+        num_repeats = len(yaml.safe_load(steady_state_file))
 
     plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample)
 
