@@ -10,7 +10,7 @@ GG = csvread(fullfile("weather_data", "irradiance_inputs.csv"));
 Vwind = csvread(fullfile("weather_data", "wind_speed_inputs.csv"));
 
 % Pass all of this information to the SSPVT script and save the outputs
-sspvt_performance(...
+[eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(...
     Ta,...
     Tcin,...
     Tflin,...
@@ -36,3 +36,21 @@ sspvt_performance(...
     panel_data.filter_to_pv_gap,...
     panel_data.coolant_width...
 );
+
+% Save the output data
+output_data = struct();
+output_data.eff_th_fluid = eff_th_fluid;
+ouptut_data.eff_th_cool = eff_th_cool;
+output_data.eff_th_total = eff_th_total;
+output_data.eff_el = eff_el;
+output_data.T_r = T_r;
+output_data.T_sspvt = T_sspvt;
+output_data.Energy = Energy;
+output_data.P_el = P_el;
+output_data.P_th = P_th;
+
+
+fid = fopen(fullfile("sspvt_sensitivity_output", "results_run_" + index + "_" + panel_filename), 'w', 'n', 'UTF-8');
+encoded_data = jsonencode(output_data);
+fprintf(fid,'%s',encoded_data);
+fclose(fid);

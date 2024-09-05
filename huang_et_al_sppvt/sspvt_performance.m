@@ -65,8 +65,6 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
         Wgap3=0.01;%The gap thickness between the filter and the PV
         Wgap4=0.01;%The gap thickness of the coolant channel 
         Winsul=0.04;%The thickness of the insulation layer
-
-        Wpv; %The width of the PV layer is currently unused
         if nargin < 5
             GG=[200 400 600 800 1000];
             Vwind=[1, 1, 1, 1, 1];
