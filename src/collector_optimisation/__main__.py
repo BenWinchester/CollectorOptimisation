@@ -898,9 +898,10 @@ def plot_pareto_front(
     )
     average_solar_irradiance = cumulative_solar_irradiance / len(weather_data_sample)
     max_collector_size = 1.4276
+    max_collector_width = optimisation_parameters["pvt_collector/width"][1]
     max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
 
-    energy_input = runs_data["pvt_collector/width"] * cumulative_solar_irradiance * num_repeats
+    energy_input = runs_data["pvt_collector/width"] * cumulative_solar_irradiance * num_repeats * max_collector_size / max_collector_width
     runs_data["normalised_electrical_fitness"] = runs_data["electrical_fitness"] / (max_electrical_efficiency * energy_input)
     runs_data["normalised_thermal_fitness"] = runs_data["thermal_fitness"] / (THERMODYNAMIC_LIMIT * energy_input)
 
