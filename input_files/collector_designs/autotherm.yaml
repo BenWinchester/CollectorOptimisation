@@ -24,6 +24,7 @@
 # downloaded and stored in Google Drive.
 #
 
+number_of_modelled_segments: 14
 pvt_collector:
   azimuthal_orientation: 180 # [deg]
   horizontal_tracking: false
