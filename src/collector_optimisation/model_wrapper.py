@@ -164,7 +164,7 @@ def temporary_collector_file(
     date_and_time: DateAndTime,
     updates_to_collector_design_parameters: dict[str, float],
     unique_id: int = random.randint(0, MAX_PARALLEL_RUNS),
-) -> Generator[str, None, None]:
+) -> Generator[tuple[str, float, float], None, None]:
     """
     Create, manage, and delete a temporary collector file.
 
@@ -177,7 +177,10 @@ def temporary_collector_file(
     :param: unique_id
         A unique ID for the run.
 
-    :yields: The path to the temporary file.
+    :yields:
+        - The path to the temporary file,
+        - the width of the collector used when running the simulation,
+        - and the initial width of the collector.
 
     """
 
@@ -220,6 +223,9 @@ def temporary_collector_file(
     with open(base_collector_filepath, "r", encoding="UTF-8") as collector_file:
         base_collector_data = yaml.safe_load(collector_file)
 
+    # Determine the initial width of the collector.
+    initial_collector_width = base_collector_data["pvt_collector"]["width"] * base_collector_data["number_of_modelled_segments"]
+
     # Attempt to loop through and update with all the parameters.
     for key, value in updates_to_collector_design_parameters.items():
         _vary_parameter(base_collector_data, key, value)
@@ -243,7 +249,7 @@ def temporary_collector_file(
         ) as temp_file:
             yaml.dump(base_collector_data, temp_file)
 
-        yield filename
+        yield filename, base_collector_data["pvt_collector"]["width"], initial_collector_width
 
     finally:
         try:
@@ -648,7 +654,8 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         # Make temporary files as needed based on the inputs for the run.
         with temporary_collector_file(
             self.base_pvt_filepath, self.date_and_time, kwargs, run_number
-        ) as temp_pvt_filepath:
+        ) as temp_collector_information:
+            temp_pvt_filepath, temp_pvt_collector_width, initial_pvt_collector_width = temp_collector_information
             with temporary_steady_state_file(
                 self.base_steady_state_filepath,
                 self.date_and_time,
@@ -663,11 +670,18 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
                     temp_pvt_filepath, temp_steady_state_filepath
                 )
 
+        # Adjust the fitness attributes to cope with the whole collector
+        segment_to_collector_scaling_factor = initial_pvt_collector_width / temp_pvt_collector_width
+
+        import pdb
+
+        pdb.set_trace()
+
         # Use the run weights for each of the runs that were returned.
         electrical_fitness = np.sum(
             entry.electrical_power for entry in output_data.values()
-        )
-        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())
+        ) * segment_to_collector_scaling_factor
+        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())* int(segment_to_collector_scaling_factor)
 
         # Return these fitnesses.
         return electrical_fitness, thermal_fitness, output_data
