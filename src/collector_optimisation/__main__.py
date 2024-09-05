@@ -84,7 +84,7 @@ SOLAR_FILENAME: str = "ninja_pv_{lat:.4f}_{lon:.4f}_uncorrected.csv"
 
 # THERMODYNAMIC_LIMIT:
 #   A thermodynamic limit on efficiency placed on solar-thermal collectors.
-THERMODYNAMIC_LIMIT: float = 1.0
+THERMODYNAMIC_LIMIT: float = 0.86
 
 # WEATHER_DIRECTORY:
 #   The name of the directory containing the weather information.
@@ -896,11 +896,12 @@ def plot_pareto_front(
     cumulative_solar_irradiance = np.sum(
         weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value]
     )
-    average_solar_irradiance = cumulative_solar_irradiance / len(weather_data_sample)
+    # average_solar_irradiance = cumulative_solar_irradiance / len(weather_data_sample)
     max_collector_size = 1.4276
+    # max_collector_width = optimisation_parameters["pvt_collector/width"][1]
     max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
 
-    energy_input = runs_data["pvt_collector/width"] * cumulative_solar_irradiance * num_repeats
+    energy_input = cumulative_solar_irradiance * num_repeats * max_collector_size
     runs_data["normalised_electrical_fitness"] = runs_data["electrical_fitness"] / (max_electrical_efficiency * energy_input)
     runs_data["normalised_thermal_fitness"] = runs_data["thermal_fitness"] / (THERMODYNAMIC_LIMIT * energy_input)
 
@@ -980,6 +981,7 @@ def main(unparsed_args: list[Any]) -> None:
         # Determine the number of steady-state runs that took place.
         with open(base_model_input_filepaths[0], "r") as steady_state_file:
             num_repeats = len(yaml.safe_load(steady_state_file))
+            # num_repeats = 1
 
         plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample, num_repeats)
 
