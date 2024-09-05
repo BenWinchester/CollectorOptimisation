@@ -673,15 +673,11 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         # Adjust the fitness attributes to cope with the whole collector
         segment_to_collector_scaling_factor = initial_pvt_collector_width / temp_pvt_collector_width
 
-        import pdb
-
-        pdb.set_trace()
-
         # Use the run weights for each of the runs that were returned.
         electrical_fitness = np.sum(
             entry.electrical_power for entry in output_data.values()
         ) * segment_to_collector_scaling_factor
-        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())* int(segment_to_collector_scaling_factor)
+        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values()) * int(segment_to_collector_scaling_factor)
 
         # Return these fitnesses.
         return electrical_fitness, thermal_fitness, output_data

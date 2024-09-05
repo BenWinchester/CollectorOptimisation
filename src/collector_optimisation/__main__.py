@@ -988,19 +988,19 @@ def main(unparsed_args: list[Any]) -> None:
         return
 
     # Run the Bayesian optimiser threads
-    bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
-        date_and_time,
-        optimisation_parameters,
-        collector_model_assessors[0],
-        (collector_model_index_to_results_map := {}),
-        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=(_initial_points := 10),
-        num_iterations=(_num_iterations := 4),
-        run_id=0,
-    )
-    bayesian_assessor_0.run()
+    # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
+    #     optimisation_parameters,
+    #     collector_model_assessors[0],
+    #     (collector_model_index_to_results_map := {}),
+    #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+    #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+    #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+    #     initial_points=(_initial_points := 10),
+    #     num_iterations=(_num_iterations := 4),
+    #     run_id=0,
+    # )
+    # bayesian_assessor_0.run()
 
     # bayesian_assessor_1 = BayesianPVTModelOptimiserSeries(
     #     date_and_time,
