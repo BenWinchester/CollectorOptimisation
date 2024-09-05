@@ -12,7 +12,7 @@
 %             COOLANT                  T8:inlet  T9:outlet
 %-----------INSULATION--------------
 
-function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Ta, Tcin, Tflin, GG, Vwind, Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, Etapvref, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, mc, mfl);
+function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, Etapvref, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, Ta, Tcin, Tflin, GG, Vwind, mc, mfl);
 % SSPVT_PERFORMANCE  Calculate the performance of an SSPVT collector
 %
 % [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
@@ -45,7 +45,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
     Ac=Lc*Wc*Nc; %Lc*Wc; % aperture area, m2
 
     % Default values for the parameters
-    if nargin < 26
+    if nargin < 20
         Emgc=0.9; % emissivity of the cover glass
         Emgfl1=0.04; % emissivity of the top glass of the filter
         Emgfl2=0.04; % emissivity of the bottom glass of the filter
@@ -65,7 +65,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
         Wgap3=0.01;%The gap thickness between the filter and the PV
         Wgap4=0.01;%The gap thickness of the coolant channel 
         Winsul=0.04;%The thickness of the insulation layer
-        if nargin < 5
+        if nargin < 25
             GG=[200 400 600 800 1000];
             Vwind=[1, 1, 1, 1, 1];
             Ta=[300, 300, 300, 300, 300]; %Ambient temperature K
