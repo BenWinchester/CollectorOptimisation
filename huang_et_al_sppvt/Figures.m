@@ -6,9 +6,9 @@ width=560*1.5;
 height=420*1.5;
 set(gcf,'position',[x0,y0,width,height]);
 
-x_G=readtable('data', sheet='ambient conditions', range='B2:B2003');
-SR_CdTe=readtable('data', sheet='solar cells', range='D3:D2004');
-SR_Sil=readtable('data', sheet='solar cells', range='I3:I2004');
+x_G=table2array(readtable('data', sheet='ambient conditions', range='B2:B2003'));
+SR_CdTe=table2array(readtable('data', sheet='solar cells', range='D3:D2004'));
+SR_Sil=table2array(readtable('data', sheet='solar cells', range='I3:I2004'));
 
 Plotspectr(1)=plot(x_G,G0,'-','Color',[0.8500 0.3250 0.0980],'linewidth',2,'DisplayName','{Original Spectrum}');hold on;
 Plotspectr(2)=plot(x_G,G4pass,'-','Color',[0 0.4470 0.7410],'linewidth',2,'DisplayName','{Filtered Spectrum}');hold on;

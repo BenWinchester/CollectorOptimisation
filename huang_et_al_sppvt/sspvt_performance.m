@@ -106,7 +106,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
     
     %Ambient conditions
     %G=1000;%Solar intensity W/m2
-    AM=readtable('data', sheet='ambient conditions', range='C2:C2003'); %the distribution of AM1.5
+    AM=table2array(readtable('data', sheet='ambient conditions', range='C2:C2003')); %the distribution of AM1.5
     GAM=1000.37;%The intensity of the standard AM1.5
     
     %****
