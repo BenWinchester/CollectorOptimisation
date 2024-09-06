@@ -40,7 +40,7 @@ Vwind = csvread(fullfile("weather_data", "wind_speed_inputs.csv"));
 % Save the output data
 output_data = struct();
 output_data.eff_th_fluid = eff_th_fluid;
-ouptut_data.eff_th_cool = eff_th_cool;
+output_data.eff_th_cool = eff_th_cool;
 output_data.eff_th_total = eff_th_total;
 output_data.eff_el = eff_el;
 output_data.T_r = T_r;
