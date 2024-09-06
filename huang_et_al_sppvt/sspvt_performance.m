@@ -45,36 +45,40 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
     Ac=Lc*Wc*Nc; %Lc*Wc; % aperture area, m2
 
     % Default values for the parameters
-    if nargin < 20
-        Emgc=0.9; % emissivity of the cover glass
-        Emgfl1=0.04; % emissivity of the top glass of the filter
-        Emgfl2=0.04; % emissivity of the bottom glass of the filter
-        Empv=0.9; % emissivity of pv
-        Abpv=0.93; % absorptivity of pv
-        Betapv=false;
-        Etapvref=false;
-        Weva=0.0005;
-        Keva=0.35;
-        Wad=0.0005;
-        Kad=0.85;
-        Kinsul=0.005;%thermal conductivity of the insulation layer
-
-        titanl=35*pi/180; % title angle of collector, rad%
-        Wgap1=0.01;%The gap thickness between top glass and the filter
-        Wgap2=0.01;%The gap thickness of the filter channel
-        Wgap3=0.01;%The gap thickness between the filter and the PV
-        Wgap4=0.01;%The gap thickness of the coolant channel 
-        Winsul=0.04;%The thickness of the insulation layer
-        if nargin < 25
+    if nargin < 26
+        mfl=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the filter fluid
+        mc=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the bottom coolant
+        if nargin < 24
             GG=[200 400 600 800 1000];
             Vwind=[1, 1, 1, 1, 1];
             Ta=[300, 300, 300, 300, 300]; %Ambient temperature K
             Tcin=[300, 300, 300, 300, 300];%bottom coolant inlet temperature 
             Tflin=[300,310,320,330,345];%filter coolant inlet temperature
+          
+            if nargin < 19
+                Emgc=0.9; % emissivity of the cover glass
+                Emgfl1=0.04; % emissivity of the top glass of the filter
+                Emgfl2=0.04; % emissivity of the bottom glass of the filter
+                Empv=0.9; % emissivity of pv
+                Abpv=0.93; % absorptivity of pv
+                Betapv=false;
+                Etapvref=false;
+                Weva=0.0005;
+                Keva=0.35;
+                Wad=0.0005;
+                Kad=0.85;
+                Kinsul=0.005;%thermal conductivity of the insulation layer
+        
+                titanl=35*pi/180; % title angle of collector, rad%
+                Wgap1=0.01;%The gap thickness between top glass and the filter
+                Wgap2=0.01;%The gap thickness of the filter channel
+                Wgap3=0.01;%The gap thickness between the filter and the PV
+                Wgap4=0.01;%The gap thickness of the coolant channel 
+                Winsul=0.04;%The thickness of the insulation layer
+            end
         end
-        mfl=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the filter fluid
-        mc=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the bottom coolant
     end
+   
 
     Tsky=0.0552.*Ta.^1.5; % sky temp
  
