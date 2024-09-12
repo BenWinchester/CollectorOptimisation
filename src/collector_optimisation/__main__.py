@@ -920,6 +920,8 @@ def plot_pareto_front(
     )
 
     if max_results is not None:
+        maximal_runs["normalised_electrical_fitness"] = maximal_runs["electrical_fitness"] / (max_electrical_efficiency * energy_input)
+        maximal_runs["normalised_thermal_fitness"] = maximal_runs["thermal_fitness"] / (THERMODYNAMIC_LIMIT * energy_input)
         sns.scatterplot(
             maximal_runs,
             x="normalised_thermal_fitness",
