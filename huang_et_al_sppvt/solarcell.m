@@ -11,7 +11,7 @@ function CellCal=solarcell(Ac,Gpv,G,cell)
 % clc;clear;
 % Tpv=273.15+25;
 % Ac=0.95*1.6;
-% Gpv=xlsread('data', 'ambient conditions', 'C2:C2003'); %the distribution of AM1.5
+% Gpv=xlsread('data.xlsx', 'ambient conditions', 'C2:C2003'); %the distribution of AM1.5
 % G=1000;
 % CellCal=solarcell(Ac,Gpv,G,'silicon')
 % CellCal=solarcell(Ac,Gpv,G,'CdTe')
@@ -36,7 +36,7 @@ if G~=0
     A1=1; % cell ideality factor,n=1 for the single p-n junction, A1 should be 1~2
     Tcoeff=0.0045;
     
-    SR=xlsread('data', 'solar cells', 'I3:I2004'); % Si, SunPowe C60 Solar Cell,cell efficiency 25.1%
+    SR=table2array(readtable('data.xlsx', 'Sheet', 'solar cells', 'Range', 'I3:I2004')); % Si, SunPowe C60 Solar Cell,cell efficiency 25.1%
     %simulation result:25.3%
     end
     
@@ -50,7 +50,7 @@ if G~=0
     A1=1; % cell ideality factor,n=1 for the single p-n junction, A1 should be 1~2
     Tcoeff=0.0025;
     
-    SR=xlsread('data', 'solar cells', 'D3:D2004'); % CdTe, First Solar 4 sereries,cell efficiency 22.1%
+    SR=table2array(readtable('data.xlsx', 'Sheet', 'solar cells', 'Range', 'D3:D2004')); % CdTe, First Solar 4 sereries,cell efficiency 22.1%
     %simulation result:22.2%
     end
     
@@ -60,7 +60,7 @@ if G~=0
     N=size(SR);
     J0=k1*Tpv0^(3/n)*exp(-Ebg/(b*kB*Tpv0));
     Jsc=0;
-    lamadaG=xlsread('data', 'ambient conditions', 'B2:B2004');
+    lamadaG=table2array(readtable('data.xlsx', 'Sheet', 'ambient conditions', 'Range', 'B2:B2004'));
 
         for i=1:N(1)
            Jsc=Jsc+Ac*Gpv(i)*SR(i)*(lamadaG(i+1)-lamadaG(i)); 

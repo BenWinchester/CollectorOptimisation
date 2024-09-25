@@ -12,7 +12,7 @@
 %             COOLANT                  T8:inlet  T9:outlet
 %-----------INSULATION--------------
 
-function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, Etapvref, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, Ta, Tcin, Tflin, GG, Vwind, mc, mfl);
+function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Ta, Tcin, Tflin, GG, Vwind, Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, Etapvref, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, mc, mfl);
 % SSPVT_PERFORMANCE  Calculate the performance of an SSPVT collector
 %
 % [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
@@ -46,39 +46,37 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
 
     % Default values for the parameters
     if nargin < 26
-        mfl=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the filter fluid
-        mc=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the bottom coolant
-        if nargin < 24
+        Emgc=0.9; % emissivity of the cover glass
+        Emgfl1=0.04; % emissivity of the top glass of the filter
+        Emgfl2=0.04; % emissivity of the bottom glass of the filter
+        Empv=0.9; % emissivity of pv
+        Abpv=0.93; % absorptivity of pv
+        Betapv=false;
+        Etapvref=false;
+        Weva=0.0005;
+        Keva=0.35;
+        Wad=0.0005;
+        Kad=0.85;
+        Kinsul=0.005;%thermal conductivity of the insulation layer
+
+        titanl=35*pi/180; % title angle of collector, rad%
+        Wgap1=0.01;%The gap thickness between top glass and the filter
+        Wgap2=0.01;%The gap thickness of the filter channel
+        Wgap3=0.01;%The gap thickness between the filter and the PV
+        Wgap4=0.01;%The gap thickness of the coolant channel 
+        Winsul=0.04;%The thickness of the insulation layer
+
+        Wpv; %The width of the PV layer is currently unused
+        if nargin < 5
             GG=[200 400 600 800 1000];
             Vwind=[1, 1, 1, 1, 1];
             Ta=[300, 300, 300, 300, 300]; %Ambient temperature K
             Tcin=[300, 300, 300, 300, 300];%bottom coolant inlet temperature 
             Tflin=[300,310,320,330,345];%filter coolant inlet temperature
-          
-            if nargin < 19
-                Emgc=0.9; % emissivity of the cover glass
-                Emgfl1=0.04; % emissivity of the top glass of the filter
-                Emgfl2=0.04; % emissivity of the bottom glass of the filter
-                Empv=0.9; % emissivity of pv
-                Abpv=0.93; % absorptivity of pv
-                Betapv=false;
-                Etapvref=false;
-                Weva=0.0005;
-                Keva=0.35;
-                Wad=0.0005;
-                Kad=0.85;
-                Kinsul=0.005;%thermal conductivity of the insulation layer
-        
-                titanl=35*pi/180; % title angle of collector, rad%
-                Wgap1=0.01;%The gap thickness between top glass and the filter
-                Wgap2=0.01;%The gap thickness of the filter channel
-                Wgap3=0.01;%The gap thickness between the filter and the PV
-                Wgap4=0.01;%The gap thickness of the coolant channel 
-                Winsul=0.04;%The thickness of the insulation layer
-            end
         end
+        mfl=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the filter fluid
+        mc=repmat(0.01*Ac, 1, length(Ta));%mass flow rate of the bottom coolant
     end
-   
 
     Tsky=0.0552.*Ta.^1.5; % sky temp
  
@@ -110,7 +108,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
     
     %Ambient conditions
     %G=1000;%Solar intensity W/m2
-    AM=table2array(readtable('data.xlsx', 'Sheet', 'ambient conditions', 'Range', 'C2:C2003')); %the distribution of AM1.5
+    AM=xlsread('data', 'ambient conditions', 'C2:C2003'); %the distribution of AM1.5
     GAM=1000.37;%The intensity of the standard AM1.5
     
     %****
@@ -175,15 +173,9 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
             hr_fl2g=h_radiation(Emgfl1,Emgc,T(2),T(1)); % radiation between cover glass and filter
             hc_fl2g=1/(2/h_enclosure(T(1),T(2),Wgap1,titanl)+Wgap1/Kair1); % convection and conduction between cover and glass through air gap 
             
-            hr_fl2pv=h_radiation(Empv,Emgfl2,T(6),T(5)); % radiation between filter and PV
-            % ATTENTION!!
-            % I believe that I have found an error in Gan's code, whereby
-            % the conduction and convection _between_ the filter and the
-            % PV, through the gap, were utilising the width of the filter
-            % channel, rather than the width of the gap, which was ending
-            % up as an unused variable at the end of the code.
-            % Original code:
-            % hc_fl2pv=1/(2/h_enclosure(T(5),T(6),Wgap2,titanl)+Wgap2/Kair2); % convection and conduction between filter and pv through air gap 
+            hr_fl2pv=h_radiation(Empv,Emgfl2,T(6),T(5)); % radiation between filter and 
+            hc_fl2pv=1/(2/h_enclosure(T(5),T(6),Wgap2,titanl)+Wgap3/Kair2); % convection and conduction between filter and pv through air gap 
+            
             hc_fl2pv=1/(2/h_enclosure(T(5),T(6),Wgap2,titanl)+Wgap3/Kair2); % convection and conduction between filter and pv through air gap 
             
             hc_pv2ab=1/(Weva/Keva+Wad/Kad+0.0001/0.2);%the thermal resistance of the EVA, adhesive and ted. 

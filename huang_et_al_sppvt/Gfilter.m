@@ -3,7 +3,7 @@ function [Gpass,Grel,Gabs]=Gfilter(Gin,Tr,Rel,Abs)
 
 N=size(Gin);
 Gabs=0;
-lamadaG=xlsread('data', 'ambient conditions', 'B2:B2004');
+lamadaG=table2array(readtable('data.xlsx', 'Sheet', 'ambient conditions', 'Range', 'B2:B2004'));
 Gpass=zeros(N(1),1);
 Grel=zeros(N(1),1);
 

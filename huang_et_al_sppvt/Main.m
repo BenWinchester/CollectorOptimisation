@@ -62,7 +62,7 @@ Kinsul=0.005;%thermal conductivity of the insulation layer
 %Ambient conditions
 %G=1000;%Solar intensity W/m2
 GG=[200 400 600 800 1000];
-AM=xlsread('data', 'ambient conditions', 'C2:C2003'); %the distribution of AM1.5
+AM=table2array(readtable('data.xlsx', 'Sheet', 'ambient conditions', 'Range', 'C2:C2003')); %the distribution of AM1.5
 GAM=1000.37;%The intensity of the standard AM1.5
 Vwind=1;%Wind speed m/s
 Ta=300;%Ambient temperature K
