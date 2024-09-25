@@ -933,8 +933,51 @@ def plot_pareto_front(
         THERMODYNAMIC_LIMIT * energy_input
     )
 
+    # Clip the runs data to be in-bounds
+    runs_data = runs_data[
+        (runs_data["electrical_fitness"] > 0)
+        & (runs_data["normalised_thermal_fitness"] > 0)
+    ]
+
     electrical_values = np.linspace(0, 1, 100)
     thermal_values = [1 - entry for entry in electrical_values]
+
+    # Write normalised legend labels
+    summed_weightings = {
+        key: thermal_weightings[key] + value
+        for key, value in electrical_weightings.items()
+    }
+
+    def _normalise_weightings(run_index: int, weighting: float) -> float:
+        """
+        Normalise a weighting so that all summed weightings are the same.
+
+        :param: run_index
+            The index for the run.
+
+        :param: weighting
+            The weighting to normalise.
+
+        :returns:
+            The normalised weighting.
+
+        """
+        return (
+            weighting * max(summed_weightings.values()) / summed_weightings[run_index]
+        )
+
+    electrical_weightings = {
+        key: _normalise_weightings(key, value)
+        for key, value in electrical_weightings.items()
+    }
+    thermal_weightings = {
+        key: _normalise_weightings(key, value)
+        for key, value in thermal_weightings.items()
+    }
+    labels: list[str] = [
+        rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}"
+        for run_number in range(len(electrical_weightings))
+    ]
 
     # Setup a new figure for the Parety front.
     plt.figure(figsize=(48 / 5, 32 / 5))
@@ -950,7 +993,7 @@ def plot_pareto_front(
         palette=un_color_palette,
         marker="h",
         s=200,
-        alpha=0.25,
+        alpha=0.15,
         linewidth=0,
         legend=False,
     )
@@ -1027,6 +1070,9 @@ def plot_pareto_front(
     plt.legend(title="Run label")
     plt.xlim(0, 1)
     plt.ylim(0, 1)
+
+    handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+    plt.legend(handles, labels)
 
     plt.savefig(
         f"pareto_front_{date_and_time.date}_{date_and_time.time}.pdf",
@@ -1201,6 +1247,206 @@ def plot_pareto_front(
     plt.show()
 
     # Plot the variation of the design parameters across the Pareto front.
+    design_variables = [
+        entry
+        for entry in runs_data.columns
+        if "fitness" not in entry and entry != "run_number"
+    ]
+    variable_labels: dict[str, str] = {
+        "mass_flow_rate": "Mass flow rate / litres/hour",
+        "air_gap/thickness": "Air-gap thickness / m",
+        "glass/absorptivity": r"Glass apsorptivity ($\alpha_\mathrm{g}$)",
+        "glass/emissivity": r"Glass emissivity ($\epsilon_\mathrm{g}$)",
+        "pv/reference_efficiency": r"PV cell reference efficiency ($\eta_\mathrm{el,ref}$)",
+        "pv/thermal_coefficient": r"PV thermal coefficient ($\beta_\mathrm{pv}$)",
+        "pvt_collector/width": r"Pipe spacing / m",
+    }
+
+    for variable in tqdm(design_variables, desc="Plotting design impact", leave=True):
+
+        # Plot the electrical fitness with only maximal values.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            "Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, labels)
+
+        plt.savefig(
+            f"optimum_electrical_maximal_runs_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the electrical fitness with all points on the Pareto front.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            "Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, labels)
+
+        plt.savefig(
+            f"optimum_electrical_on_pareto_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the thermal fitness with only maximal values.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, labels)
+
+        plt.savefig(
+            f"optimum_thermal_maximal_runs_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the thermal fitness with all points on the Pareto front.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, labels)
+
+        plt.savefig(
+            f"optimum_thermal_on_pareto_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+    plt.show()
 
     import pdb
 
