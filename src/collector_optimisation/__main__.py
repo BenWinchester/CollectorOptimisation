@@ -1283,6 +1283,119 @@ def plot_pareto_front(
         "pvt_collector/width": r"Pipe spacing / m",
     }
 
+    for variable in tqdm(design_variables, desc="Plotting design KDEs", leave=True):
+        # Setup a new figure for the KDE analysis front.
+        joint_plot_grid = sns.jointplot(
+            (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            alpha=1.0,
+            kind="scatter",
+            marker="h",
+            s=200,
+            # linewidths=2,
+            zorder=1,
+            marginal_ticks=False,
+            ratio=3,
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+            ax=joint_plot_grid.ax_joint,
+            zorder=0,
+        )
+        # joint_plot_grid.plot_marginals(sns.rugplot, height=-.15, clip_on=False)
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(
+            handles[:7], [labels[int(plotted_label)] for plotted_label in range(7)]
+        )
+        # sns.despine(offset=10)
+        joint_plot_grid.ax_marg_x.tick_params(axis="x", left=False, labelleft=False)
+        joint_plot_grid.ax_marg_x.set_xlabel("Average irradiance / kWm$^{-2}$")
+        joint_plot_grid.ax_marg_y.tick_params(axis="y", bottom=False, labelbottom=False)
+        plt.savefig(
+            f"optimum_electrical_with_kde_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Setup a new figure for the KDE analysis front.
+        joint_plot_grid = sns.jointplot(
+            (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            alpha=1.0,
+            kind="scatter",
+            marker="h",
+            s=200,
+            # linewidths=2,
+            zorder=1,
+            marginal_ticks=False,
+            # ratio=3
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+            ax=joint_plot_grid.ax_joint,
+            zorder=0,
+        )
+        # joint_plot_grid.plot_marginals(sns.rugplot, height=-.15, clip_on=False)
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(
+            handles[:7], [labels[int(plotted_label)] for plotted_label in range(7)]
+        )
+        # sns.despine(offset=10)
+        joint_plot_grid.ax_marg_x.tick_params(axis="x", left=False, labelleft=False)
+        joint_plot_grid.ax_marg_x.set_xlabel("Average irradiance / kWm$^{-2}$")
+        joint_plot_grid.ax_marg_y.tick_params(axis="y", bottom=False, labelbottom=False)
+        plt.savefig(
+            f"optimum_thermal_with_kde_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+    plt.show()
+
     for variable in tqdm(design_variables, desc="Plotting design impact", leave=True):
 
         # Plot the electrical fitness with only maximal values.
@@ -1425,7 +1538,7 @@ def plot_pareto_front(
 
         plt.xlabel(variable_labels[variable])
         plt.ylabel(
-            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
         )
         plt.ylim(0, 1)
 
