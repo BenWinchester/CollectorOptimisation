@@ -51,6 +51,10 @@ from .model_wrapper import (
 )
 
 
+# AUTO_GENERATED:
+#   The name to use for the auto-generated files directory.
+AUTO_GENERATED: str = "auto_generated"
+
 # COLLECTOR_FILES_DIRECTORY:
 #   The name of the directory containing base collector files.
 COLLECTOR_FILES_DIRECTORY: str = "collector_designs"
@@ -172,6 +176,102 @@ class SampleType(enum.Enum):
 
     DENSITY = "density"
     GRID = "grid"
+
+
+def _load_reference_runs(
+    base_collector_filename: str,
+    base_model_input_files: list[str],
+    date_and_time: DateAndTime,
+    initial_points: int,
+    location_name: str,
+    model_name: str,
+    num_iterations: int,
+    optimisation_parameters: pd.DataFrame,
+    weather_data_sample: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Load the reference runs if these have been computed, and compute if not.
+
+    :param: base_collector_filename
+        The base collector filename on which adjustments are made.
+
+    :param: base_model_input_files
+        A `list` of filenames which go into the underlying model.
+
+    :param: date_and_time
+        The date and time to use when saving files.
+
+    :param: initial_points
+        The number of initial points to use.
+
+    :param: location_name
+        The name of the location to consider.
+
+    :param: model_name
+        The name of the model to use.
+
+    :param: num_iterations
+        The number of iterations to model.
+
+    :param: optimisation_parameters
+        The optimisation parameters to use.
+
+    :param: weather_data_sample
+        The weather-data sample to use.
+
+    """
+
+    os.makedirs(AUTO_GENERATED, exist_ok=True)
+
+    if os.path.isfile(
+        (
+            reference_results_filepath := os.path.join(
+                AUTO_GENERATED, f"{model_name}_reference.csv"
+            )
+        )
+    ):
+        return pd.read_csv(reference_results_filepath, index_col=None)
+
+    reference_model_assessor = CollectorModelAssessor.collector_type_to_wrapper[
+        CollectorType(model_name)
+    ](
+        base_collector_filename,
+        base_model_input_files,
+        date_and_time,
+        location_name,
+        f"{model_name}_reference",
+        weighting_calculator=WeightingCalculator(1, 1),
+    )
+
+    index_to_results_map: dict[int, Any] = {}
+
+    bayesian_optimisation_thread = BayesianPVTModelOptimiserThread(
+        date_and_time,
+        {
+            key: value
+            for key, value in optimisation_parameters.items()
+            if key == "mass_flow_rate"
+        },
+        reference_model_assessor,
+        index_to_results_map,
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+        initial_points=initial_points,
+        num_iterations=num_iterations,
+        run_id=0,
+    )
+
+    # Start and join the thread
+    bayesian_optimisation_thread.start()
+    bayesian_optimisation_thread.join()
+
+    # Rename the results and return them.
+    os.rename(
+        f"runs_data_{date_and_time.date}_{date_and_time.time}.csv",
+        reference_results_filepath,
+    )
+    return pd.read_csv(reference_results_filepath, index_col=None)
 
 
 def _parse_args(args: list[Any]) -> argparse.Namespace:
@@ -821,6 +921,7 @@ def plot_pareto_front(
     *,
     electrical_weightings: dict[int, float] | None = None,
     num_repeats: int = 1,
+    reference_collector_runs: pd.DataFrame,
     thermal_weightings: dict[int, float] | None = None,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame]:
     """
@@ -841,6 +942,9 @@ def plot_pareto_front(
     :param: num_repeats
         The number of steady-state runs that took place, and so how many additional runs
         took place for each data point.
+
+    :param: reference_collector_runs
+        The reference collector runs.
 
     :param: thermal_weightings
         The thermal weightings to use, as a `dict` instance.
@@ -1060,6 +1164,26 @@ def plot_pareto_front(
         color="grey",
     )
 
+    reference_collector_runs["normalised_electrical_fitness"] = (
+        reference_collector_runs["electrical_fitness"]
+        / (max_electrical_efficiency * energy_input)
+    )
+    reference_collector_runs["normalised_thermal_fitness"] = reference_collector_runs[
+        "thermal_fitness"
+    ] / (THERMODYNAMIC_LIMIT * energy_input)
+    sns.scatterplot(
+        pd.DataFrame(
+            reference_collector_runs.sort_values("fitness", ascending=False).iloc[0]
+        ).transpose(),
+        x="normalised_thermal_fitness",
+        y="normalised_electrical_fitness",
+        s=250,
+        alpha=1.0,
+        color=un_color_palette.as_hex()[0],
+        label="Solimpeks Powervolt",
+        marker="P",
+    )
+
     # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
     plt.xlabel(
         "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
@@ -1072,7 +1196,7 @@ def plot_pareto_front(
     plt.ylim(0, 1)
 
     handles, _ = (axis := plt.gca()).get_legend_handles_labels()
-    plt.legend(handles, labels)
+    plt.legend(handles, labels + ["Solimpeks Powervolt"])
 
     plt.savefig(
         f"pareto_front_{date_and_time.date}_{date_and_time.time}.pdf",
@@ -1487,6 +1611,18 @@ def main(unparsed_args: list[Any]) -> None:
         weather_sample_size=parsed_args.weather_sample_size,
     )
 
+    reference_collector_runs = _load_reference_runs(
+        base_collector_filepath,
+        base_model_input_filepaths,
+        date_and_time,
+        parsed_args.initial_points,
+        parsed_args.location,
+        collector_model_assessors[0].collector_type.value,
+        parsed_args.num_iterations,
+        optimisation_parameters,
+        weather_data_sample,
+    )
+
     # Parse the weightings information
     electrical_weightings = {
         index: collector_model_assessors[
@@ -1511,6 +1647,7 @@ def main(unparsed_args: list[Any]) -> None:
             weather_data_sample,
             electrical_weightings=electrical_weightings,
             num_repeats=num_repeats,
+            reference_collector_runs=reference_collector_runs,
             thermal_weightings=thermal_weightings,
         )
 
@@ -1606,6 +1743,7 @@ def main(unparsed_args: list[Any]) -> None:
         optimisation_parameters,
         weather_data_sample,
         electrical_weightings=electrical_weightings,
+        reference_collector_runs=reference_collector_runs,
         thermal_weightings=thermal_weightings,
     )
 
