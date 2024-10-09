@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass, field
 from matplotlib import rc
 from scipy.optimize import curve_fit
-from typing import Any
+from typing import Any, Generator
 
 import numpy as np
 import pandas as pd
@@ -109,13 +109,20 @@ sns.set_context("notebook")
 sns.set_style("whitegrid")
 un_color_palette = sns.color_palette(
     [
-        "#C51A2E",
-        "#ED6A30",
-        "#FBC219",
-        "#2CBCE0",
-        "#2297D5",
-        "#0D699F",
-        "#19496A",
+        # "#C51A2E",
+        # "#ED6A30",
+        # "#FBC219",
+        # "#2CBCE0",
+        # "#2297D5",
+        # "#0D699F",
+        # "#19496A",
+        "#8F1838",
+        "#D9302F",
+        "#F36D25",
+        "#FDB713",
+        "#00AED9",
+        "#0169A4",
+        "#183668",
     ]
 )
 
@@ -1078,10 +1085,10 @@ def plot_pareto_front(
         key: _normalise_weightings(key, value)
         for key, value in thermal_weightings.items()
     }
-    labels: list[str] = [
-        rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}"
+    labels: dict[int, str] = {
+        run_number: rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}"
         for run_number in range(len(electrical_weightings))
-    ]
+    }
 
     # Setup a new figure for the Parety front.
     plt.figure(figsize=(48 / 5, 32 / 5))
@@ -1186,12 +1193,13 @@ def plot_pareto_front(
 
     # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
     plt.xlabel(
-        "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
     )
     plt.ylabel(
-        "Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
     )
-    plt.legend(title="Run label")
+    handles, _ = plt.gca().get_legend_handles_labels()
+    plt.legend(handles, labels.values())
     plt.xlim(0, 1)
     plt.ylim(0, 1)
 
@@ -1247,10 +1255,22 @@ def plot_pareto_front(
         return list(zip(x_values, y_values))
 
     # Plot the Pareto front with subplots for each of the run numbers.
+    def subplots_label() -> Generator[str, None, None]:
+        index = 0
+        labels = [f"{entry}." for entry in ["a", "b", "c", "d", "e", "f", "g", "h"]]
+
+        while index in range(len(labels)):
+            yield labels[index]
+
+            index += 1
+
+        return StopIteration()
+
     fig, axes = plt.subplots(3, 3, figsize=(48 / 5, 48 / 5))
-    fig.subplots_adjust(hspace=0.45)
+    fig.subplots_adjust(hspace=0.55, wspace=0.45)
 
     sns.set_palette(un_color_palette)
+    subplots_labels = subplots_label()
 
     for run_number in sorted(set(runs_data["run_number"])):
         axis = axes[run_number // 3, run_number % 3]
@@ -1337,6 +1357,7 @@ def plot_pareto_front(
             rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}",
             fontweight="bold",
         )
+        axis.text(-0.25, 1.1125, next(subplots_labels), fontsize=16, fontweight="bold")
 
     axes[2, 1].set_visible(False)
     axes[2, 2].set_visible(False)
@@ -1344,14 +1365,14 @@ def plot_pareto_front(
     fig.text(
         0.5,
         0.04,
-        "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
+        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
         ha="center",
         va="center",
     )
     fig.text(
         0.04,
         0.5,
-        "Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$",
+        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$",
         ha="center",
         va="center",
         rotation="vertical",
@@ -1385,6 +1406,119 @@ def plot_pareto_front(
         "pv/thermal_coefficient": r"PV thermal coefficient ($\beta_\mathrm{pv}$)",
         "pvt_collector/width": r"Pipe spacing / m",
     }
+
+    for variable in tqdm(design_variables, desc="Plotting design KDEs", leave=True):
+        # Setup a new figure for the KDE analysis front.
+        joint_plot_grid = sns.jointplot(
+            (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            alpha=1.0,
+            kind="scatter",
+            marker="h",
+            s=200,
+            # linewidths=2,
+            zorder=1,
+            marginal_ticks=False,
+            ratio=3,
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+            ax=joint_plot_grid.ax_joint,
+            zorder=0,
+        )
+        # joint_plot_grid.plot_marginals(sns.rugplot, height=-.15, clip_on=False)
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(
+            handles[:7], [labels[int(plotted_label)] for plotted_label in range(7)]
+        )
+        # sns.despine(offset=10)
+        joint_plot_grid.ax_marg_x.tick_params(axis="x", left=False, labelleft=False)
+        joint_plot_grid.ax_marg_x.set_xlabel("Average irradiance / kWm$^{-2}$")
+        joint_plot_grid.ax_marg_y.tick_params(axis="y", bottom=False, labelbottom=False)
+        plt.savefig(
+            f"optimum_electrical_with_kde_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Setup a new figure for the KDE analysis front.
+        joint_plot_grid = sns.jointplot(
+            (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            alpha=1.0,
+            kind="scatter",
+            marker="h",
+            s=200,
+            # linewidths=2,
+            zorder=1,
+            marginal_ticks=False,
+            # ratio=3
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+            ax=joint_plot_grid.ax_joint,
+            zorder=0,
+        )
+        # joint_plot_grid.plot_marginals(sns.rugplot, height=-.15, clip_on=False)
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(
+            handles[:7], [labels[int(plotted_label)] for plotted_label in range(7)]
+        )
+        # sns.despine(offset=10)
+        joint_plot_grid.ax_marg_x.tick_params(axis="x", left=False, labelleft=False)
+        joint_plot_grid.ax_marg_x.set_xlabel("Average irradiance / kWm$^{-2}$")
+        joint_plot_grid.ax_marg_y.tick_params(axis="y", bottom=False, labelbottom=False)
+        plt.savefig(
+            f"optimum_thermal_with_kde_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+    plt.show()
 
     for variable in tqdm(design_variables, desc="Plotting design impact", leave=True):
 
@@ -1420,12 +1554,12 @@ def plot_pareto_front(
 
         plt.xlabel(variable_labels[variable])
         plt.ylabel(
-            "Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
         )
         plt.ylim(0, 1)
 
-        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
-        plt.legend(handles, labels)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
 
         plt.savefig(
             f"optimum_electrical_maximal_runs_{variable.replace('/', '_')}.pdf",
@@ -1458,22 +1592,85 @@ def plot_pareto_front(
             x=variable,
             y="normalised_electrical_fitness",
             hue="run_number",
-            palette=un_color_palette,
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
             s=200,
             marker="h",
         )
 
         plt.xlabel(variable_labels[variable])
         plt.ylabel(
-            "Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
         )
         plt.ylim(0, 1)
 
-        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
-        plt.legend(handles, labels)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
 
         plt.savefig(
             f"optimum_electrical_on_pareto_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the points on the Pareto front and which are optimal.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
+            s=200,
+            marker="h",
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles[-7:], list(labels.values())[-7:])
+
+        plt.savefig(
+            f"optimum_electrical_on_pareto_with_optimal_{variable.replace('/', '_')}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
@@ -1511,12 +1708,12 @@ def plot_pareto_front(
 
         plt.xlabel(variable_labels[variable])
         plt.ylabel(
-            "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
         )
         plt.ylim(0, 1)
 
-        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
-        plt.legend(handles, labels)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
 
         plt.savefig(
             f"optimum_thermal_maximal_runs_{variable.replace('/', '_')}.pdf",
@@ -1549,22 +1746,85 @@ def plot_pareto_front(
             x=variable,
             y="normalised_thermal_fitness",
             hue="run_number",
-            palette=un_color_palette,
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
             s=200,
             marker="h",
         )
 
         plt.xlabel(variable_labels[variable])
         plt.ylabel(
-            "Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
         )
         plt.ylim(0, 1)
 
-        handles, _ = (axis := plt.gca()).get_legend_handles_labels()
-        plt.legend(handles, labels)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
 
         plt.savefig(
             f"optimum_thermal_on_pareto_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the thermal fitness with all points on the Pareto front.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
+            s=200,
+            marker="h",
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles[-7:], list(labels.values())[-7:])
+
+        plt.savefig(
+            f"optimum_thermal_on_pareto_with_optimal_{variable.replace('/', '_')}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
