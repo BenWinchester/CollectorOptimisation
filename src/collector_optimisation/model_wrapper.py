@@ -660,9 +660,11 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         with temporary_collector_file(
             self.base_pvt_filepath, self.date_and_time, kwargs, run_number
         ) as temp_collector_information:
-            temp_pvt_filepath, temp_pvt_collector_width, initial_pvt_collector_width = (
-                temp_collector_information
-            )
+            (
+                temp_pvt_filepath,
+                temp_pvt_collector_width,
+                initial_pvt_collector_width,
+            ) = temp_collector_information
             with temporary_steady_state_file(
                 self.base_steady_state_filepath,
                 self.date_and_time,
@@ -733,15 +735,17 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         """
 
         # Calculate the unweighted fitnesses.
-        electrical_fitness, thermal_fitness, output_data = (
-            self.unweighted_fitness_function(
-                mass_flow_rate,
-                run_number,
-                solar_irradiance_data,
-                temperature_data,
-                wind_speed_data,
-                **kwargs,
-            )
+        (
+            electrical_fitness,
+            thermal_fitness,
+            output_data,
+        ) = self.unweighted_fitness_function(
+            mass_flow_rate,
+            run_number,
+            solar_irradiance_data,
+            temperature_data,
+            wind_speed_data,
+            **kwargs,
         )
 
         # Assess the fitness of the results and return.

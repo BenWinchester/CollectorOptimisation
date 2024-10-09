@@ -1171,9 +1171,10 @@ def plot_pareto_front(
         color="grey",
     )
 
-    reference_collector_runs["normalised_electrical_fitness"] = (
-        reference_collector_runs["electrical_fitness"]
-        / (max_electrical_efficiency * energy_input)
+    reference_collector_runs[
+        "normalised_electrical_fitness"
+    ] = reference_collector_runs["electrical_fitness"] / (
+        max_electrical_efficiency * energy_input
     )
     reference_collector_runs["normalised_thermal_fitness"] = reference_collector_runs[
         "thermal_fitness"
@@ -1187,9 +1188,39 @@ def plot_pareto_front(
         s=250,
         alpha=1.0,
         color=un_color_palette.as_hex()[0],
-        label="Solimpeks Powervolt",
+        label="Reference collector",
         marker="P",
     )
+
+    if os.path.isfile((herrando_filename := "herrando_data.csv")):
+        with open(herrando_filename, "r", encoding="UTF-8") as herrando_file:
+            herrando_data = pd.read_csv(herrando_file)
+
+        # Sanitise the columns and rows
+        sns.scatterplot(
+            herrando_data,
+            x="normalised_thermal_output",
+            y="normalised_electrical_output",
+            s=100,
+            alpha=1.0,
+            # color=un_color_palette.as_hex()[2],
+            palette=sns.color_palette(
+                [
+                    "#FFFFE5",
+                    "#FFF7BC",
+                    "#FEE391",
+                    "#FEC44F",
+                    "#FB9A29",
+                    "#EC7014",
+                    "#CC4C02",
+                    "#993404",
+                    "#662506",
+                ]
+            ),
+            hue="Collector name",
+            marker="D",
+            edgecolor="#232323",
+        )
 
     # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
     plt.xlabel(
@@ -1199,12 +1230,25 @@ def plot_pareto_front(
         r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
     )
     handles, _ = plt.gca().get_legend_handles_labels()
-    plt.legend(handles, labels.values())
+    plt.legend(
+        handles, list(labels.values()) + _[len(labels) :], ncol=1, loc="lower left"
+    )
     plt.xlim(0, 1)
     plt.ylim(0, 1)
 
-    handles, _ = (axis := plt.gca()).get_legend_handles_labels()
-    plt.legend(handles, labels + ["Solimpeks Powervolt"])
+    (ax1 := plt.gca()).legend(
+        handles[:8], list(labels.values()) + [_[len(labels)]], loc="upper left"
+    )
+    (ax1.twinx()).legend(
+        handles[8:],
+        _[len(labels) + 1 :],
+        ncol=1,
+        title=r"Herrando $\mathit{et}$ $\mathit{al}$. review",
+        loc="lower left",
+    )
+
+    # handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+    # plt.legend(handles, labels + ["Solimpeks Powervolt"])
 
     plt.savefig(
         f"pareto_front_{date_and_time.date}_{date_and_time.time}.pdf",
@@ -1521,7 +1565,6 @@ def plot_pareto_front(
     plt.show()
 
     for variable in tqdm(design_variables, desc="Plotting design impact", leave=True):
-
         # Plot the electrical fitness with only maximal values.
         plt.figure(figsize=(48 / 5, 32 / 5))
 
