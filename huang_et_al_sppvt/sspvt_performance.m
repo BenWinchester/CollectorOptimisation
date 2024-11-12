@@ -116,6 +116,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
     %****
     %====================CALCULATION=============================
     for j=1:length(GG)
+        disp("Running for time " + j)
     
         G=GG(j);    
         %Spectrum spliting on each layer

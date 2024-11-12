@@ -1,6 +1,7 @@
 % Open the relevant input file
-[status, panel_filename] = system("head sensitivity_filenames.txt | head -n " + index + " | tail -n 1");
+[status, panel_filename] = system("head sensitivity_filenames.txt -n " + index + " | tail -n 1");
 panel_data = jsondecode(fileread(fullfile("silicon_sspvt_sensitivity", panel_filename)));
+disp("Panel data parsed.")
 
 % Open the weather-data inputs
 Ta = csvread(fullfile("weather_data", "ambient_temperature_inputs.csv"));
@@ -36,6 +37,7 @@ Vwind = csvread(fullfile("weather_data", "wind_speed_inputs.csv"));
     GG,...
     Vwind...
 );
+disp("SSPV-T calculation complete.")
 
 % Save the output data
 output_data = struct();
@@ -54,3 +56,4 @@ fid = fopen(fullfile("sspvt_sensitivity_output", "results_run_" + index + "_" + 
 encoded_data = jsonencode(output_data);
 fprintf(fid,'%s',encoded_data);
 fclose(fid);
+disp("Data saved to " + fullfile("sspvt_sensitivity_output", "results_run_" + index + "_" + panel_filename))
