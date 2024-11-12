@@ -12,7 +12,7 @@
 %             COOLANT                  T8:inlet  T9:outlet
 %-----------INSULATION--------------
 
-function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, Etapvref, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, Ta, Tcin, Tflin, GG, Vwind, mc, mfl);
+function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, solar_cell_material, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, Ta, Tcin, Tflin, GG, Vwind, mc, mfl);
 % SSPVT_PERFORMANCE  Calculate the performance of an SSPVT collector
 %
 % [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
@@ -52,7 +52,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
             GG=[200 400 600 800 1000];
             Vwind=[1, 1, 1, 1, 1];
             Ta=[300, 300, 300, 300, 300]; %Ambient temperature K
-            Tcin=[300, 300, 300, 300, 300];%bottom coolant inlet temperature 
+            Tcin=[300, 300, 300, 300, 300];%bottom coolant inlet temperature
             Tflin=[300,310,320,330,345];%filter coolant inlet temperature
           
             if nargin < 19
@@ -62,7 +62,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
                 Empv=0.9; % emissivity of pv
                 Abpv=0.93; % absorptivity of pv
                 Betapv=false;
-                Etapvref=false;
+                solar_cell_material='CdTe';
                 Weva=0.0005;
                 Keva=0.35;
                 Wad=0.0005;
@@ -78,6 +78,8 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
             end
         end
     end
+
+    disp("Panel type: " + solar_cell_material)
    
 
     Tsky=0.0552.*Ta.^1.5; % sky temp
@@ -142,16 +144,16 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
         
         
         % the performance of PV cell
-        Solarcell=solarcell(Ac,G4pass*Abpv,G,'CdTe');
+        Solarcell=solarcell(Ac,G4pass*Abpv,G,solar_cell_material);
 
         % override the values if the user has specified performance values
         if ~(Betapv == false)
             Solarcell(6) = Betapv;
         end
         
-        if ~(Etapvref == false)
-            Solarcell(1) = Etapvref;
-        end
+        % if ~(Etapvref == false)
+        %     Solarcell(1) = Etapvref;
+        % end
     
         
         %simulation initials and settings

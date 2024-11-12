@@ -47,6 +47,7 @@ from .model_wrapper import (
     CollectorType,
     Fitness,
     RUNS_DATA_FILENAME,
+    SSPVT_SUFFIX_QUEUE,
     WeightingCalculator,
 )
 
@@ -312,6 +313,13 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
         type=int,
     )
     parser.add_argument(
+        "-opt",
+        "--optimisation_file",
+        default=OPTIMISATION_INPUTS_FILE,
+        help="The name of the optimisations input file to use.",
+        type=str,
+    )
+    parser.add_argument(
         "-po",
         "--plotting-only",
         action="store_true",
@@ -384,6 +392,7 @@ def _parse_files(
     base_model_input_files: list[str],
     date_and_time: DateAndTime,
     location_name: str,
+    optimisation_file: str,
     *,
     resample: bool = False,
     sample_type: SampleType = SampleType.DENSITY,
@@ -404,6 +413,9 @@ def _parse_files(
 
     :param: location_name
         The name of the location to consider.
+
+    :param: optimisation_file
+        The name of the optimisations file to use.
 
     :param: resample
         If specified, the weather data will be resampled.
@@ -848,7 +860,7 @@ def _parse_files(
     # Parse the optimisation inputs information and convert into a format that is usable
     # by the Bayesian optimisation script.
     with open(
-        os.path.join(INPUT_FILES_DIRECTORY, OPTIMISATION_INPUTS_FILE),
+        os.path.join(INPUT_FILES_DIRECTORY, optimisation_file),
         "r",
         encoding="UTF-8",
     ) as optimisation_inputs_file:
@@ -1909,6 +1921,7 @@ def main(unparsed_args: list[Any]) -> None:
         base_model_input_filepaths,
         date_and_time,
         parsed_args.location,
+        parsed_args.optimisation_file,
         resample=parsed_args.resample,
         weather_sample_filename=parsed_args.weather_sample_filename,
         weather_sample_size=parsed_args.weather_sample_size,
@@ -1956,20 +1969,41 @@ def main(unparsed_args: list[Any]) -> None:
 
         return
 
+    for suffix in range(len(collector_model_assessors)):
+        SSPVT_SUFFIX_QUEUE.put(suffix)
+
+    bayesian_assessor_7 = BayesianPVTModelOptimiserSeries(
+        date_and_time,
+        optimisation_parameters,
+        collector_model_assessors[7],
+        (collector_model_index_to_results_map := {}),
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+        initial_points=(_initial_points := 10),
+        num_iterations=(_num_iterations := 4),
+        run_id=7,
+    )
+    bayesian_assessor_7.run()
+
+    import pdb
+
+    pdb.set_trace()
+
     # Run the Bayesian optimiser threads
-    # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
-    #     date_and_time,
-    #     optimisation_parameters,
-    #     collector_model_assessors[0],
-    #     (collector_model_index_to_results_map := {}),
-    #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-    #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-    #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-    #     initial_points=(_initial_points := 10),
-    #     num_iterations=(_num_iterations := 4),
-    #     run_id=0,
-    # )
-    # bayesian_assessor_0.run()
+    bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
+        date_and_time,
+        optimisation_parameters,
+        collector_model_assessors[7],
+        (collector_model_index_to_results_map := {}),
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+        initial_points=(_initial_points := 10),
+        num_iterations=(_num_iterations := 4),
+        run_id=0,
+    )
+    bayesian_assessor_0.run()
 
     # bayesian_assessor_1 = BayesianPVTModelOptimiserSeries(
     #     date_and_time,
