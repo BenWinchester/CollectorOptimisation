@@ -13,7 +13,7 @@
     "pv/absorptivity": 0.93,
     "pv/emissivity": 0.9,
     "pv/thickness": 0.00035,
-    "pv/reference_efficiency": 0.251,
+    "pv/solar_cell_material": "silicon",
     "pv/thermal_coefficient": 0.0045,
     "eva/thermal_conductivity": 0.35,
     "eva/thickness": 0.0005,

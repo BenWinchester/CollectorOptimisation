@@ -1183,10 +1183,9 @@ def plot_pareto_front(
         color="grey",
     )
 
-    reference_collector_runs[
-        "normalised_electrical_fitness"
-    ] = reference_collector_runs["electrical_fitness"] / (
-        max_electrical_efficiency * energy_input
+    reference_collector_runs["normalised_electrical_fitness"] = (
+        reference_collector_runs["electrical_fitness"]
+        / (max_electrical_efficiency * energy_input)
     )
     reference_collector_runs["normalised_thermal_fitness"] = reference_collector_runs[
         "thermal_fitness"

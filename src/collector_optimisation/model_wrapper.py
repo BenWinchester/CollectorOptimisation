@@ -46,6 +46,10 @@ from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
 # information.
 FILE_LOCK: threading.Lock = threading.Lock()
 
+# HUANG_ET_AL_DIRECTORY
+#   Directory name for the Huang _et al._ model.
+HUANG_ET_AL_DIRECTORY: str = "huang_et_al_sspvt"
+
 # LOCATIONS_FOLDERNAME:
 #   The name of the folder where locations are stored.
 LOCATIONS_FOLDERNAME: str = "locations"
@@ -65,9 +69,7 @@ SSPVT_BAYESIAN_OUTPUT_DIRECTORY: str = "sspvt_bayesian_output"
 
 # SSPVT_BAYESIAN_OUTPUT_FILENAME:
 #   Ouptut filename for Bayesian output files.
-SSPVT_BAYESIAN_OUTPUT_FILENAME: str = (
-    "results_run_{suffix}_{temporary_sspvt_filepath}.json"
-)
+SSPVT_BAYESIAN_OUTPUT_FILENAME: str = "results_run_{suffix}_{panel_filename}.json"
 
 # SSPVT_SUFFIX_COUNTER:
 #   A counter used to provide a suffix when running parallel SSPV-T computations
@@ -196,11 +198,13 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
 
     # Run the model from the SSPVT directory.
     try:
-        os.chdir("huang_et_al_sspvt")
+        os.chdir(HUANG_ET_AL_DIRECTORY)
         subprocess.run(
-            ('matlab -nodesktop -nosplash -nojvm -r "panel_filename='
-            + os.path.join("..", panel_filename)
-            + f'suffix={suffix};sspvt_bayesian"').split(" ")
+            (
+                'matlab -nodesktop -nosplash -nojvm -r "panel_filename='
+                + f"'{os.path.basename(panel_filename)}';"
+                + f'suffix={suffix};sspvt_bayesian"'
+            ).split(" ")
         )
 
     # Change up a directory.
@@ -228,6 +232,7 @@ def temporary_collector_file(
     base_collector_filepath: str,
     date_and_time: DateAndTime,
     updates_to_collector_design_parameters: dict[str, float],
+    temp_upper_dirname: str | None = None,
     unique_id: int = random.randint(0, MAX_PARALLEL_RUNS),
 ) -> Generator[tuple[str, float | None, float | None], None, None]:
     """
@@ -326,17 +331,25 @@ def temporary_collector_file(
         _vary_parameter(base_collector_data, key, value)
 
     # Make the temporary directory if it doesn't exist.
-    if not os.path.isdir(TEMPORARY_FILE_DIRECTORY):
-        os.makedirs(TEMPORARY_FILE_DIRECTORY, exist_ok=True)
+    if temp_upper_dirname is not None:
+        os.makedirs(temp_upper_dirname, exist_ok=True)
+        temp_dirname: str = os.path.join(temp_upper_dirname, TEMPORARY_FILE_DIRECTORY)
+        # temp_dirname: str = temp_upper_dirname
+
+    else:
+        temp_dirname = TEMPORARY_FILE_DIRECTORY
+
+    if not os.path.isdir(temp_dirname):
+        os.makedirs(temp_dirname, exist_ok=True)
 
     # Save these data to a temporary file
     try:
         with open(
             (
                 filename := os.path.join(
-                    TEMPORARY_FILE_DIRECTORY,
-                    f"{os.path.basename(base_collector_filepath).split('.')[0]}_"
-                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}.yaml",
+                    temp_dirname,
+                    f"temp_{os.path.basename(base_collector_filepath).split('.')[0]}_"
+                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}." + loader.value,
                 )
             ),
             "w",
@@ -345,7 +358,7 @@ def temporary_collector_file(
             if loader == Loader.YAML:
                 yaml.dump(base_collector_data, temp_file)
             elif loader == Loader.CSV:
-                base_collector_data.to_csv(temp_file)
+                base_collector_data.to_csv(temp_file, header=None)
             elif loader == Loader.JSON:
                 json.dump(base_collector_data, temp_file, indent=4)
 
@@ -433,7 +446,7 @@ def temporary_steady_state_file(
                 filename := os.path.join(
                     TEMPORARY_FILE_DIRECTORY,
                     f"{os.path.basename(base_steady_state_filepath).split('.')[0]}_"
-                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}.csv",
+                    f"temp_{unique_id}_{date_and_time.date}_{date_and_time.time}.csv",
                 )
             ),
             "w",
@@ -460,6 +473,7 @@ def temporary_sspvt_steady_state_files(
     solar_irradiance_data: list[float],
     temperature_data: list[float],
     wind_speed_data: list[float],
+    temp_upper_dirname: str | None = None,
 ) -> Generator[str, None, None]:
     """
     Create and return a suffix for the paths to the temporary steady-state file(s).
@@ -537,6 +551,15 @@ def temporary_sspvt_steady_state_files(
         [wind_speed_data for _ in range(number_of_input_temperature_points)], axis=0
     )
 
+    if temp_upper_dirname is not None:
+        temporary_file_directory: str = os.path.join(
+            temp_upper_dirname, TEMPORARY_FILE_DIRECTORY
+        )
+        # temporary_file_directory: str = temp_upper_dirname
+        os.makedirs(temporary_file_directory, exist_ok=True)
+    else:
+        temporary_file_directory = TEMPORARY_FILE_DIRECTORY
+
     # Fetch a unique ID to use for the suffix
     try:
         suffix = SSPVT_SUFFIX_QUEUE.get()
@@ -556,16 +579,17 @@ def temporary_sspvt_steady_state_files(
                 desc="Creating temporary weather files",
                 leave=False,
             ):
-                os.makedirs(TEMPORARY_FILE_DIRECTORY, exist_ok=True)
+                os.makedirs(temporary_file_directory, exist_ok=True)
                 with open(
                     os.path.join(
-                        TEMPORARY_FILE_DIRECTORY,
-                        os.path.basename(filepath.replace(".csv", f"_{suffix}.csv")),
+                        temporary_file_directory,
+                        "temp_"
+                        + os.path.basename(filepath.replace(".csv", f"_{suffix}.csv")),
                     ),
                     "w",
                     encoding="UTF-8",
                 ) as temp_file:
-                    data_frame.to_csv(temp_file, index=None)
+                    data_frame.to_csv(temp_file, index=None, header=None)
 
             yield suffix
 
@@ -575,8 +599,9 @@ def temporary_sspvt_steady_state_files(
                     try:
                         os.remove(
                             os.path.join(
-                                TEMPORARY_FILE_DIRECTORY,
-                                os.path.basename(
+                                temporary_file_directory,
+                                "temp_"
+                                + os.path.basename(
                                     filepath.replace(".csv", f"_{suffix}.csv")
                                 ),
                             ).replace(".csv", f"_{suffix}.csv")
@@ -1210,7 +1235,7 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
 
         os.makedirs(SSPVT_BAYESIAN_OUTPUT_DIRECTORY, exist_ok=True)
         os.makedirs(
-            os.path.join("huang_et_al_sspvt", SSPVT_BAYESIAN_OUTPUT_DIRECTORY),
+            os.path.join(HUANG_ET_AL_DIRECTORY, SSPVT_BAYESIAN_OUTPUT_DIRECTORY),
             exist_ok=True,
         )
 
@@ -1279,7 +1304,11 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
 
         # Make temporary files as needed based on the inputs for the run.
         with temporary_collector_file(
-            self.base_sspvt_filepath, self.date_and_time, kwargs, run_number
+            self.base_sspvt_filepath,
+            self.date_and_time,
+            kwargs,
+            temp_upper_dirname=HUANG_ET_AL_DIRECTORY,
+            unique_id=run_number,
         ) as temp_collector_information:
             # FIXME: Work from here :)
             (temp_sspvt_filepath, _, _) = temp_collector_information
@@ -1292,6 +1321,7 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
                 solar_irradiance_data,
                 temperature_data,
                 wind_speed_data,
+                temp_upper_dirname=HUANG_ET_AL_DIRECTORY,
             ) as temp_steady_state_suffix:
                 # Run the model.
                 output_data = self._run_model(
