@@ -25,13 +25,14 @@ import sys
 from dataclasses import dataclass, field
 from matplotlib import rc
 from scipy.optimize import curve_fit
-from typing import Any
+from typing import Any, Generator
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import yaml
 
+from fast_pareto import is_pareto_front
 from sklearn.neighbors import KernelDensity
 from tqdm import tqdm
 
@@ -49,6 +50,10 @@ from .model_wrapper import (
     WeightingCalculator,
 )
 
+
+# AUTO_GENERATED:
+#   The name to use for the auto-generated files directory.
+AUTO_GENERATED: str = "auto_generated"
 
 # COLLECTOR_FILES_DIRECTORY:
 #   The name of the directory containing base collector files.
@@ -84,7 +89,7 @@ SOLAR_FILENAME: str = "ninja_pv_{lat:.4f}_{lon:.4f}_uncorrected.csv"
 
 # THERMODYNAMIC_LIMIT:
 #   A thermodynamic limit on efficiency placed on solar-thermal collectors.
-THERMODYNAMIC_LIMIT: float = 0.86
+THERMODYNAMIC_LIMIT: float = 1.0
 
 # WEATHER_DIRECTORY:
 #   The name of the directory containing the weather information.
@@ -104,13 +109,20 @@ sns.set_context("notebook")
 sns.set_style("whitegrid")
 un_color_palette = sns.color_palette(
     [
-        "#C51A2E",
-        "#ED6A30",
-        "#FBC219",
-        "#2CBCE0",
-        "#2297D5",
-        "#0D699F",
-        "#19496A",
+        # "#C51A2E",
+        # "#ED6A30",
+        # "#FBC219",
+        # "#2CBCE0",
+        # "#2297D5",
+        # "#0D699F",
+        # "#19496A",
+        "#8F1838",
+        "#D9302F",
+        "#F36D25",
+        "#FDB713",
+        "#00AED9",
+        "#0169A4",
+        "#183668",
     ]
 )
 
@@ -173,6 +185,102 @@ class SampleType(enum.Enum):
     GRID = "grid"
 
 
+def _load_reference_runs(
+    base_collector_filename: str,
+    base_model_input_files: list[str],
+    date_and_time: DateAndTime,
+    initial_points: int,
+    location_name: str,
+    model_name: str,
+    num_iterations: int,
+    optimisation_parameters: pd.DataFrame,
+    weather_data_sample: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Load the reference runs if these have been computed, and compute if not.
+
+    :param: base_collector_filename
+        The base collector filename on which adjustments are made.
+
+    :param: base_model_input_files
+        A `list` of filenames which go into the underlying model.
+
+    :param: date_and_time
+        The date and time to use when saving files.
+
+    :param: initial_points
+        The number of initial points to use.
+
+    :param: location_name
+        The name of the location to consider.
+
+    :param: model_name
+        The name of the model to use.
+
+    :param: num_iterations
+        The number of iterations to model.
+
+    :param: optimisation_parameters
+        The optimisation parameters to use.
+
+    :param: weather_data_sample
+        The weather-data sample to use.
+
+    """
+
+    os.makedirs(AUTO_GENERATED, exist_ok=True)
+
+    if os.path.isfile(
+        (
+            reference_results_filepath := os.path.join(
+                AUTO_GENERATED, f"{model_name}_reference.csv"
+            )
+        )
+    ):
+        return pd.read_csv(reference_results_filepath, index_col=None)
+
+    reference_model_assessor = CollectorModelAssessor.collector_type_to_wrapper[
+        CollectorType(model_name)
+    ](
+        base_collector_filename,
+        base_model_input_files,
+        date_and_time,
+        location_name,
+        f"{model_name}_reference",
+        weighting_calculator=WeightingCalculator(1, 1),
+    )
+
+    index_to_results_map: dict[int, Any] = {}
+
+    bayesian_optimisation_thread = BayesianPVTModelOptimiserThread(
+        date_and_time,
+        {
+            key: value
+            for key, value in optimisation_parameters.items()
+            if key == "mass_flow_rate"
+        },
+        reference_model_assessor,
+        index_to_results_map,
+        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+        initial_points=initial_points,
+        num_iterations=num_iterations,
+        run_id=0,
+    )
+
+    # Start and join the thread
+    bayesian_optimisation_thread.start()
+    bayesian_optimisation_thread.join()
+
+    # Rename the results and return them.
+    os.rename(
+        f"runs_data_{date_and_time.date}_{date_and_time.time}.csv",
+        reference_results_filepath,
+    )
+    return pd.read_csv(reference_results_filepath, index_col=None)
+
+
 def _parse_args(args: list[Any]) -> argparse.Namespace:
     """
     Parses command-line arguments into a :class:`argparse.NameSpace`.
@@ -189,8 +297,20 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
     parser.add_argument(
         "-l", "--location", help="The name of the location to consider.", type=str
     )
-    parser.add_argument("-i", "--initial-points", default=16, help="The number of initial points to use.", type=int)
-    parser.add_argument("-n", "--num-iterations", default=128, help="The number of iterations to carry out.", type=int)
+    parser.add_argument(
+        "-i",
+        "--initial-points",
+        default=16,
+        help="The number of initial points to use.",
+        type=int,
+    )
+    parser.add_argument(
+        "-n",
+        "--num-iterations",
+        default=128,
+        help="The number of iterations to carry out.",
+        type=int,
+    )
     parser.add_argument(
         "-po",
         "--plotting-only",
@@ -805,8 +925,12 @@ def plot_pareto_front(
     date_and_time: DateAndTime,
     optimisation_parameters: dict[Any, tuple[Any, Any]],
     weather_data_sample: pd.DataFrame,
+    *,
+    electrical_weightings: dict[int, float] | None = None,
     num_repeats: int = 1,
-) -> None:
+    reference_collector_runs: pd.DataFrame,
+    thermal_weightings: dict[int, float] | None = None,
+) -> tuple[pd.DataFrame | None, pd.DataFrame]:
     """
     Plots the Pareto front.
 
@@ -819,22 +943,30 @@ def plot_pareto_front(
     :param: werather_data_sample
         The weather-data sample to use.
 
+    :param: electrical_weightings
+        The electrical weightings to use, as a `dict` instance.
+
     :param: num_repeats
         The number of steady-state runs that took place, and so how many additional runs
         took place for each data point.
+
+    :param: reference_collector_runs
+        The reference collector runs.
+
+    :param: thermal_weightings
+        The thermal weightings to use, as a `dict` instance.
 
     """
 
     # Ensure all previous plots have closed.
     plt.close()
 
-    # Setup a new figure for the Parety front.
-    plt.figure(figsize=(48 / 5, 32 / 5))
-
     # Open the data and parse the values.
     try:
         with open(
-            MAX_RESULTS_FILENAME.format(date=date_and_time.date, time=date_and_time.time),
+            MAX_RESULTS_FILENAME.format(
+                date=date_and_time.date, time=date_and_time.time
+            ),
             "r",
         ) as max_results_file:
             max_results: pd.DataFrame | None = pd.read_csv(max_results_file)
@@ -892,6 +1024,9 @@ def plot_pareto_front(
                 label="Fitted Pareto front",
             )
 
+    else:
+        maximal_runs = None
+
     # Normalise the runs data based on the total input values
     cumulative_solar_irradiance = np.sum(
         weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value]
@@ -902,39 +1037,218 @@ def plot_pareto_front(
     max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
 
     energy_input = cumulative_solar_irradiance * num_repeats * max_collector_size
-    runs_data["normalised_electrical_fitness"] = runs_data["electrical_fitness"] / (max_electrical_efficiency * energy_input)
-    runs_data["normalised_thermal_fitness"] = runs_data["thermal_fitness"] / (THERMODYNAMIC_LIMIT * energy_input)
+    runs_data["normalised_electrical_fitness"] = runs_data["electrical_fitness"] / (
+        max_electrical_efficiency * energy_input
+    )
+    runs_data["normalised_thermal_fitness"] = runs_data["thermal_fitness"] / (
+        THERMODYNAMIC_LIMIT * energy_input
+    )
+
+    # Clip the runs data to be in-bounds
+    runs_data = runs_data[
+        (runs_data["electrical_fitness"] > 0)
+        & (runs_data["normalised_thermal_fitness"] > 0)
+    ]
 
     electrical_values = np.linspace(0, 1, 100)
     thermal_values = [1 - entry for entry in electrical_values]
 
-    sns.scatterplot(
-        runs_data,
-        x="normalised_thermal_fitness",
-        y="normalised_electrical_fitness",
-        color="grey",
-        marker="h",
-        s=200,
-        alpha=0.5,
-        linewidth=0,
-    )
+    # Write normalised legend labels
+    summed_weightings = {
+        key: thermal_weightings[key] + value
+        for key, value in electrical_weightings.items()
+    }
 
-    if max_results is not None:
-        sns.scatterplot(
-            maximal_runs,
-            x="normalised_thermal_fitness",
-            y="normalised_electrical_fitness",
-            hue="run_number",
-            palette=un_color_palette,
-            s=200,
-            alpha=0.8,
-            marker="h",
+    def _normalise_weightings(run_index: int, weighting: float) -> float:
+        """
+        Normalise a weighting so that all summed weightings are the same.
+
+        :param: run_index
+            The index for the run.
+
+        :param: weighting
+            The weighting to normalise.
+
+        :returns:
+            The normalised weighting.
+
+        """
+        return (
+            weighting * max(summed_weightings.values()) / summed_weightings[run_index]
         )
 
-    plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
-    plt.xlabel("Normalised thermal energy produced / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$")
-    plt.ylabel("Normalised electrical energy produced / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$")
-    plt.legend(title="Run label")
+    electrical_weightings = {
+        key: _normalise_weightings(key, value)
+        for key, value in electrical_weightings.items()
+    }
+    thermal_weightings = {
+        key: _normalise_weightings(key, value)
+        for key, value in thermal_weightings.items()
+    }
+    labels: dict[int, str] = {
+        run_number: rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}"
+        for run_number in range(len(electrical_weightings))
+    }
+
+    # Setup a new figure for the Parety front.
+    plt.figure(figsize=(48 / 5, 32 / 5))
+
+    sns.scatterplot(
+        runs_data[
+            (runs_data["electrical_fitness"] > 0) & (runs_data["thermal_fitness"] > 0)
+        ],
+        x="normalised_thermal_fitness",
+        y="normalised_electrical_fitness",
+        # color="grey",
+        hue="run_number",
+        palette=un_color_palette,
+        marker="h",
+        s=200,
+        alpha=0.15,
+        linewidth=0,
+        legend=False,
+    )
+
+    # Plot the max-results flie if present, otherwise plot the maximal results from
+    # those obtained.
+    if max_results is not None:
+        maximal_runs["normalised_electrical_fitness"] = maximal_runs[
+            "electrical_fitness"
+        ] / (max_electrical_efficiency * energy_input)
+        maximal_runs["normalised_thermal_fitness"] = maximal_runs["thermal_fitness"] / (
+            THERMODYNAMIC_LIMIT * energy_input
+        )
+    else:
+        maximal_runs = pd.DataFrame(
+            {
+                index: runs_data[
+                    (runs_data["run_number"] == index)
+                    & (runs_data["electrical_fitness"] > 0)
+                    & (runs_data["thermal_fitness"] > 0)
+                ]
+                .sort_values("fitness", ascending=False)
+                .iloc[0]
+                for index in set(runs_data["run_number"])
+            }
+        ).transpose()
+        maximal_runs["run_number"] = maximal_runs["run_number"].astype(int)
+
+    sns.scatterplot(
+        maximal_runs,
+        x="normalised_thermal_fitness",
+        y="normalised_electrical_fitness",
+        hue="run_number",
+        palette=un_color_palette,
+        s=200,
+        alpha=1.0,
+        marker="h",
+    )
+
+    # Determine and plot the Pareto front
+    pareto_front_frame = runs_data[
+        is_pareto_front(
+            runs_data.loc[
+                :,
+                ["normalised_electrical_fitness", "normalised_thermal_fitness"],
+            ].values,
+            larger_is_better_objectives=[0, 1],
+        )
+    ]
+    # sns.scatterplot(
+    #     pareto_front_frame,
+    #     x="normalised_thermal_fitness",
+    #     y="normalised_electrical_fitness",
+    #     hue="run_number",
+    #     palette=un_color_palette,
+    #     s=200,
+    #     marker="h",
+    # )
+    sns.lineplot(
+        pareto_front_frame,
+        x="normalised_thermal_fitness",
+        y="normalised_electrical_fitness",
+        dashes=(4, 2),
+        color="grey",
+    )
+
+    reference_collector_runs[
+        "normalised_electrical_fitness"
+    ] = reference_collector_runs["electrical_fitness"] / (
+        max_electrical_efficiency * energy_input
+    )
+    reference_collector_runs["normalised_thermal_fitness"] = reference_collector_runs[
+        "thermal_fitness"
+    ] / (THERMODYNAMIC_LIMIT * energy_input)
+    sns.scatterplot(
+        pd.DataFrame(
+            reference_collector_runs.sort_values("fitness", ascending=False).iloc[0]
+        ).transpose(),
+        x="normalised_thermal_fitness",
+        y="normalised_electrical_fitness",
+        s=250,
+        alpha=1.0,
+        color=un_color_palette.as_hex()[0],
+        label="Reference collector",
+        marker="P",
+    )
+
+    if os.path.isfile((herrando_filename := "herrando_data.csv")):
+        with open(herrando_filename, "r", encoding="UTF-8") as herrando_file:
+            herrando_data = pd.read_csv(herrando_file)
+
+        # Sanitise the columns and rows
+        sns.scatterplot(
+            herrando_data,
+            x="normalised_thermal_output",
+            y="normalised_electrical_output",
+            s=100,
+            alpha=1.0,
+            # color=un_color_palette.as_hex()[2],
+            palette=sns.color_palette(
+                [
+                    "#FFFFE5",
+                    "#FFF7BC",
+                    "#FEE391",
+                    "#FEC44F",
+                    "#FB9A29",
+                    "#EC7014",
+                    "#CC4C02",
+                    "#993404",
+                    "#662506",
+                ]
+            ),
+            hue="Collector name",
+            marker="D",
+            edgecolor="#232323",
+        )
+
+    # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
+    plt.xlabel(
+        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+    )
+    plt.ylabel(
+        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+    )
+    handles, _ = plt.gca().get_legend_handles_labels()
+    plt.legend(
+        handles, list(labels.values()) + _[len(labels) :], ncol=1, loc="lower left"
+    )
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+
+    (ax1 := plt.gca()).legend(
+        handles[:8], list(labels.values()) + [_[len(labels)]], loc="upper left"
+    )
+    (ax1.twinx()).legend(
+        handles[8:],
+        _[len(labels) + 1 :],
+        ncol=1,
+        title=r"Herrando $\mathit{et}$ $\mathit{al}$. review",
+        loc="lower left",
+    )
+
+    # handles, _ = (axis := plt.gca()).get_legend_handles_labels()
+    # plt.legend(handles, labels + ["Solimpeks Powervolt"])
 
     plt.savefig(
         f"pareto_front_{date_and_time.date}_{date_and_time.time}.pdf",
@@ -943,6 +1257,629 @@ def plot_pareto_front(
     )
 
     plt.show()
+
+    def _generate_tangent_points(
+        point: tuple[float, float],
+        gradient: float,
+        num_points: int = 100,
+        x_min: float = 0,
+        x_max: float = 1,
+        y_min: float = 0,
+        y_max: float = 1,
+    ) -> list[tuple[float, float]]:
+        """
+        Generates points for plotting a Pareto tangent.
+
+        :param: point
+            A `tuple` which represents the point.
+
+        :param: gradient
+            The gradient of the line at the point.
+
+        :param: num_points
+            The number of points to plot.
+
+        """
+
+        # For an infinite gradient, plot a vertical line.
+        if abs(gradient) == np.inf:
+            y_values = np.linspace(y_min, y_max, num_points)
+            x_values = [point[0]] * len(y_values)
+
+        # For a zero gradient, plot a horizontal line.
+        elif gradient == 0:
+            x_values = np.linspace(x_min, x_max, num_points)
+            y_values = [point[1]] * len(x_values)
+
+        # Otherwise, plot a y=mx+c line.
+        else:
+            x_values = np.linspace(x_min, x_max, num_points)
+            y_values = gradient * (x_values - point[0]) + point[1]
+
+        return list(zip(x_values, y_values))
+
+    # Plot the Pareto front with subplots for each of the run numbers.
+    def subplots_label() -> Generator[str, None, None]:
+        index = 0
+        labels = [f"{entry}." for entry in ["a", "b", "c", "d", "e", "f", "g", "h"]]
+
+        while index in range(len(labels)):
+            yield labels[index]
+
+            index += 1
+
+        return StopIteration()
+
+    fig, axes = plt.subplots(3, 3, figsize=(48 / 5, 48 / 5))
+    fig.subplots_adjust(hspace=0.55, wspace=0.45)
+
+    sns.set_palette(un_color_palette)
+    subplots_labels = subplots_label()
+
+    for run_number in sorted(set(runs_data["run_number"])):
+        axis = axes[run_number // 3, run_number % 3]
+        # Plot all points, coloured only if the run number matches.
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+                & (runs_data["run_number"] != run_number)
+            ],
+            x="normalised_thermal_fitness",
+            y="normalised_electrical_fitness",
+            ax=axis,
+            color="lightgrey",
+            # hue="run_number",
+            # palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+                & (runs_data["run_number"] == run_number)
+            ],
+            x="normalised_thermal_fitness",
+            y="normalised_electrical_fitness",
+            ax=axis,
+            color=f"C{run_number}",
+            # hue="run_number",
+            # palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.25,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            (maximal_run := maximal_runs[maximal_runs["run_number"] == run_number]),
+            x="normalised_thermal_fitness",
+            y="normalised_electrical_fitness",
+            ax=axis,
+            color=f"C{run_number}",
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+        tangent_line_points = _generate_tangent_points(
+            (
+                (
+                    normalised_thermal_fitness_point := float(
+                        maximal_run["normalised_thermal_fitness"].iloc[0]
+                    )
+                ),
+                float(maximal_run["normalised_electrical_fitness"].iloc[0]),
+            ),
+            (
+                gradient := -np.divide(
+                    thermal_weightings[run_number],
+                    electrical_weightings[run_number] * (max_electrical_efficiency),
+                )
+            ),
+        )
+        line = sns.lineplot(
+            x=[entry[0] for entry in tangent_line_points],
+            y=[entry[1] for entry in tangent_line_points],
+            ax=axis,
+            color=f"C{run_number}",
+            dashes=(2, 2),
+            label="Optimisation front",
+        )
+        if run_number == 0:
+            axis.axvline(x=normalised_thermal_fitness_point, dashes=(2, 2))
+        axis.legend().remove()
+        sns.despine(offset=10)
+        axis.set_xlim(0, 1)
+        axis.set_ylim(0, 1)
+        axis.set_xlabel(None)
+        axis.set_ylabel(None)
+        axis.set_title(
+            rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}",
+            fontweight="bold",
+        )
+        axis.text(-0.25, 1.1125, next(subplots_labels), fontsize=16, fontweight="bold")
+
+    axes[2, 1].set_visible(False)
+    axes[2, 2].set_visible(False)
+
+    fig.text(
+        0.5,
+        0.04,
+        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
+        ha="center",
+        va="center",
+    )
+    fig.text(
+        0.04,
+        0.5,
+        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$",
+        ha="center",
+        va="center",
+        rotation="vertical",
+    )
+    fig.legend(
+        [line],
+        ["Optimisation front(s)"],
+        loc="lower right",
+    )
+
+    plt.savefig(
+        f"pareto_subplots_{date_and_time.date}_{date_and_time.time}.pdf",
+        bbox_inches="tight",
+        pad_inches=0,
+    )
+
+    plt.show()
+
+    # Plot the variation of the design parameters across the Pareto front.
+    design_variables = [
+        entry
+        for entry in runs_data.columns
+        if "fitness" not in entry and entry != "run_number"
+    ]
+    variable_labels: dict[str, str] = {
+        "mass_flow_rate": "Mass flow rate / litres/hour",
+        "air_gap/thickness": "Air-gap thickness / m",
+        "glass/absorptivity": r"Glass apsorptivity ($\alpha_\mathrm{g}$)",
+        "glass/emissivity": r"Glass emissivity ($\epsilon_\mathrm{g}$)",
+        "pv/reference_efficiency": r"PV cell reference efficiency ($\eta_\mathrm{el,ref}$)",
+        "pv/thermal_coefficient": r"PV thermal coefficient ($\beta_\mathrm{pv}$)",
+        "pvt_collector/width": r"Pipe spacing / m",
+    }
+
+    for variable in tqdm(design_variables, desc="Plotting design KDEs", leave=True):
+        # Setup a new figure for the KDE analysis front.
+        joint_plot_grid = sns.jointplot(
+            (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            alpha=1.0,
+            kind="scatter",
+            marker="h",
+            s=200,
+            # linewidths=2,
+            zorder=1,
+            marginal_ticks=False,
+            ratio=3,
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+            ax=joint_plot_grid.ax_joint,
+            zorder=0,
+        )
+        # joint_plot_grid.plot_marginals(sns.rugplot, height=-.15, clip_on=False)
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(
+            handles[:7], [labels[int(plotted_label)] for plotted_label in range(7)]
+        )
+        # sns.despine(offset=10)
+        joint_plot_grid.ax_marg_x.tick_params(axis="x", left=False, labelleft=False)
+        joint_plot_grid.ax_marg_x.set_xlabel("Average irradiance / kWm$^{-2}$")
+        joint_plot_grid.ax_marg_y.tick_params(axis="y", bottom=False, labelbottom=False)
+        plt.savefig(
+            f"optimum_electrical_with_kde_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Setup a new figure for the KDE analysis front.
+        joint_plot_grid = sns.jointplot(
+            (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            alpha=1.0,
+            kind="scatter",
+            marker="h",
+            s=200,
+            # linewidths=2,
+            zorder=1,
+            marginal_ticks=False,
+            # ratio=3
+        )
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+            ax=joint_plot_grid.ax_joint,
+            zorder=0,
+        )
+        # joint_plot_grid.plot_marginals(sns.rugplot, height=-.15, clip_on=False)
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(
+            handles[:7], [labels[int(plotted_label)] for plotted_label in range(7)]
+        )
+        # sns.despine(offset=10)
+        joint_plot_grid.ax_marg_x.tick_params(axis="x", left=False, labelleft=False)
+        joint_plot_grid.ax_marg_x.set_xlabel("Average irradiance / kWm$^{-2}$")
+        joint_plot_grid.ax_marg_y.tick_params(axis="y", bottom=False, labelbottom=False)
+        plt.savefig(
+            f"optimum_thermal_with_kde_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+    plt.show()
+
+    for variable in tqdm(design_variables, desc="Plotting design impact", leave=True):
+        # Plot the electrical fitness with only maximal values.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
+
+        plt.savefig(
+            f"optimum_electrical_maximal_runs_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the electrical fitness with all points on the Pareto front.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
+            s=200,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
+
+        plt.savefig(
+            f"optimum_electrical_on_pareto_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the points on the Pareto front and which are optimal.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_electrical_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
+            s=200,
+            marker="h",
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_electrical_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles[-7:], list(labels.values())[-7:])
+
+        plt.savefig(
+            f"optimum_electrical_on_pareto_with_optimal_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the thermal fitness with only maximal values.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
+
+        plt.savefig(
+            f"optimum_thermal_maximal_runs_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the thermal fitness with all points on the Pareto front.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
+            s=200,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles, [labels[int(label)] for label in plotted_labels])
+
+        plt.savefig(
+            f"optimum_thermal_on_pareto_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+        # Plot the thermal fitness with all points on the Pareto front.
+        plt.figure(figsize=(48 / 5, 32 / 5))
+
+        sns.scatterplot(
+            runs_data[
+                (runs_data["electrical_fitness"] > 0)
+                & (runs_data["thermal_fitness"] > 0)
+            ],
+            x=variable,
+            y="normalised_thermal_fitness",
+            # color="grey",
+            hue="run_number",
+            palette=un_color_palette,
+            marker="h",
+            s=200,
+            alpha=0.05,
+            linewidth=0,
+            legend=False,
+        )
+        sns.scatterplot(
+            pareto_front_frame,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=[
+                color
+                for index, color in enumerate(un_color_palette)
+                if index in set(pareto_front_frame["run_number"])
+            ],
+            s=200,
+            marker="h",
+        )
+        sns.scatterplot(
+            maximal_runs,
+            x=variable,
+            y="normalised_thermal_fitness",
+            hue="run_number",
+            palette=un_color_palette,
+            s=200,
+            alpha=1.0,
+            marker="h",
+        )
+
+        plt.xlabel(variable_labels[variable])
+        plt.ylabel(
+            r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        )
+        plt.ylim(0, 1)
+
+        handles, plotted_labels = (axis := plt.gca()).get_legend_handles_labels()
+        plt.legend(handles[-7:], list(labels.values())[-7:])
+
+        plt.savefig(
+            f"optimum_thermal_on_pareto_with_optimal_{variable.replace('/', '_')}.pdf",
+            format="pdf",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+
+    plt.show()
+
+    import pdb
+
+    pdb.set_trace()
+
+    return maximal_runs, runs_data
 
 
 def main(unparsed_args: list[Any]) -> None:
@@ -977,13 +1914,45 @@ def main(unparsed_args: list[Any]) -> None:
         weather_sample_size=parsed_args.weather_sample_size,
     )
 
+    reference_collector_runs = _load_reference_runs(
+        base_collector_filepath,
+        base_model_input_filepaths,
+        date_and_time,
+        parsed_args.initial_points,
+        parsed_args.location,
+        collector_model_assessors[0].collector_type.value,
+        parsed_args.num_iterations,
+        optimisation_parameters,
+        weather_data_sample,
+    )
+
+    # Parse the weightings information
+    electrical_weightings = {
+        index: collector_model_assessors[
+            index
+        ].weighting_calculator.electrical_weighting
+        for index in range(len(collector_model_assessors))
+    }
+    thermal_weightings = {
+        index: collector_model_assessors[index].weighting_calculator.thermal_weighting
+        for index in range(len(collector_model_assessors))
+    }
+
     if parsed_args.plotting_only:
         # Determine the number of steady-state runs that took place.
         with open(base_model_input_filepaths[0], "r") as steady_state_file:
             num_repeats = len(yaml.safe_load(steady_state_file))
             # num_repeats = 1
 
-        plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample, num_repeats)
+        maximal_runs, runs_data = plot_pareto_front(
+            date_and_time,
+            optimisation_parameters,
+            weather_data_sample,
+            electrical_weightings=electrical_weightings,
+            num_repeats=num_repeats,
+            reference_collector_runs=reference_collector_runs,
+            thermal_weightings=thermal_weightings,
+        )
 
         return
 
@@ -1072,7 +2041,14 @@ def main(unparsed_args: list[Any]) -> None:
     with open(base_model_input_filepaths[0], "r") as steady_state_file:
         num_repeats = len(yaml.safe_load(steady_state_file))
 
-    plot_pareto_front(date_and_time, optimisation_parameters, weather_data_sample)
+    plot_pareto_front(
+        date_and_time,
+        optimisation_parameters,
+        weather_data_sample,
+        electrical_weightings=electrical_weightings,
+        reference_collector_runs=reference_collector_runs,
+        thermal_weightings=thermal_weightings,
+    )
 
     import pdb
 
