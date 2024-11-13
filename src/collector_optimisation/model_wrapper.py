@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 from contextlib import contextmanager
 from io import StringIO
@@ -192,10 +193,6 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
 
     """
 
-    import pdb
-
-    pdb.set_trace(header="SSPV-T launcher")
-
     # Run the model from the SSPVT directory.
     try:
         os.chdir(HUANG_ET_AL_DIRECTORY)
@@ -207,14 +204,30 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
             ).split(" ")
         )
 
+        # Wait until the output file exists.
+        is_file: bool = os.path.isfile(
+            output_filename := os.path.join(
+                SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
+                SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
+                    panel_filename=os.path.basename(panel_filename), suffix=suffix
+                ),
+            )
+        )
+        with tqdm(
+            [None], desc="Running MATLAB code", unit="simulation", leave=False, total=1
+        ) as pbar:
+            while not is_file:
+                time.sleep(1)
+                is_file = os.path.isfile(output_filename)
+
+            pbar.update(1)
+
     # Change up a directory.
     finally:
         # Try to move the output file up a directory.
         try:
-            shutil.copy2(
-                output_filename := SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
-                    panel_filename=panel_filename, suffix=suffix
-                ),
+            shutil.move(
+                output_filename,
                 os.path.join("..", output_filename),
             )
         except Exception:
@@ -349,7 +362,8 @@ def temporary_collector_file(
                 filename := os.path.join(
                     temp_dirname,
                     f"temp_{os.path.basename(base_collector_filepath).split('.')[0]}_"
-                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}." + loader.value,
+                    f"{unique_id}_{date_and_time.date}_{date_and_time.time}."
+                    + loader.value,
                 )
             ),
             "w",
@@ -1229,31 +1243,36 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
         # if os.path.isfile(self.output_filename):
         #     os.remove(self.output_filename)
 
-        import pdb
-
-        pdb.set_trace(header="_run_model")
-
         os.makedirs(SSPVT_BAYESIAN_OUTPUT_DIRECTORY, exist_ok=True)
         os.makedirs(
             os.path.join(HUANG_ET_AL_DIRECTORY, SSPVT_BAYESIAN_OUTPUT_DIRECTORY),
             exist_ok=True,
         )
 
-        # Run the MATLAB model and return the outputs.
-        # with Capturing():
-        sspvt_model_main(panel_filename=temporary_sspvt_filepath, suffix=suffix)
+        try:
+            # Run the MATLAB model and return the outputs.
+            # with Capturing():
+            sspvt_model_main(panel_filename=temporary_sspvt_filepath, suffix=suffix)
 
-        with open(
-            os.path.join(
-                SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
-                SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
-                    panel_filename=temporary_sspvt_filepath, suffix=suffix
-                ),
-            ),
-            "r",
-            encoding="UTF-8",
-        ) as sspvt_bayesian_output_file:
-            sspvt_bayesian_output = json.load(sspvt_bayesian_output_file)
+            # FIXME: Delete file once opened.
+
+            with open(
+                (this_bayesian_run_output:=os.path.join(
+                    SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
+                    SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
+                        panel_filename=os.path.basename(temporary_sspvt_filepath), suffix=suffix
+                    ),
+                )),
+                "r",
+                encoding="UTF-8",
+            ) as sspvt_bayesian_output_file:
+                sspvt_bayesian_output = json.load(sspvt_bayesian_output_file)
+
+        finally:
+            try:
+                os.remove(this_bayesian_run_output)
+            except FileNotFoundError:
+                pass
 
         return sspvt_bayesian_output
 
@@ -1333,11 +1352,9 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
         pdb.set_trace(header="SSPV-T model run, fitness to be computed.")
 
         # Use the run weights for each of the runs that were returned.
-        coolant_fitness = np.sum(entry.coolant_power for entry in output_data.values())
-        electrical_fitness = np.sum(
-            entry.electrical_power for entry in output_data.values()
-        )
-        thermal_fitness = np.sum(entry.thermal_power for entry in output_data.values())
+        coolant_fitness = sum(output_data.get("P_cool", [0])) / (total_input_power:=sum(output_data["P_in"]))
+        electrical_fitness = sum(output_data.get("P_el", [0])) / total_input_power
+        thermal_fitness = sum(output_data.get("P_fl", [0])) / total_input_power
 
         # Return these fitnesses.
         return coolant_fitness, electrical_fitness, thermal_fitness, output_data

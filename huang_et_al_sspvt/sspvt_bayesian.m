@@ -17,7 +17,7 @@ Vwind = csvread(fullfile("temp", "temp_wind_speed_inputs_" + num2str(suffix) + "
 Ta = Ta + 273.15;
 
 % Pass all of this information to the SSPVT script and save the outputs
-[eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(...
+[eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th, P_fl, P_cool, P_in] = sspvt_performance(...
     panel_data.glass_emissivity,...
     panel_data.filter_glass_emissivity,...
     panel_data.filter_glass_emissivity,...
@@ -56,7 +56,9 @@ output_data.T_sspvt = T_sspvt;
 output_data.Energy = Energy;
 output_data.P_el = P_el;
 output_data.P_th = P_th;
-
+output_data.P_fl = P_fl;
+output_data.P_cool = P_cool;
+output_data.P_in = P_in;
 
 fid = fopen(fullfile("sspvt_bayesian_output", "results_run_" + num2str(suffix) + "_" + panel_filename + ".json"), 'w', 'n', 'UTF-8');
 encoded_data = jsonencode(output_data);

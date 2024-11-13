@@ -12,7 +12,7 @@
 %             COOLANT                  T8:inlet  T9:outlet
 %-----------INSULATION--------------
 
-function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th] = sspvt_performance(Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, solar_cell_material, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, Ta, Tcin, Tflin, GG, Vwind, mc, mfl);
+function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy, P_el, P_th, P_fl, P_cool, P_in] = sspvt_performance(Emgc, Emgfl1, Emgfl2, Abpv, Empv, Wpv, Betapv, solar_cell_material, Keva, Weva, Kad, Wad, Kinsul, Winsul, titanl, Wgap1, Wgap2, Wgap3, Wgap4, Ta, Tcin, Tflin, GG, Vwind, mc, mfl);
 % SSPVT_PERFORMANCE  Calculate the performance of an SSPVT collector
 %
 % [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
@@ -321,6 +321,9 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
         % Power output
         P_el(j)=effm*G*Ac;
         P_th(j)=mc(j)*cpfl*(T(9)-T(8)) + mfl(j)*cpfl*(T(4)-T(3));
+        P_fl(j)=mfl(j)*cpfl*(T(4)-T(3));
+        P_cool(j)=mc(j)*cpfl*(T(9)-T(8));
+        P_in(j)=G*Ac;
    
     end
 end
