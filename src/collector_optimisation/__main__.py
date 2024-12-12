@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 import random
 import os
 import sys
+import warnings
+warnings.filterwarnings("ignore")
 
 from dataclasses import dataclass, field
 from matplotlib import rc
@@ -1986,24 +1988,20 @@ def main(unparsed_args: list[Any]) -> None:
     )
     bayesian_assessor_7.run()
 
-    import pdb
-
-    pdb.set_trace()
-
-    # Run the Bayesian optimiser threads
-    bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
-        date_and_time,
-        optimisation_parameters,
-        collector_model_assessors[7],
-        (collector_model_index_to_results_map := {}),
-        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=(_initial_points := 10),
-        num_iterations=(_num_iterations := 4),
-        run_id=0,
-    )
-    bayesian_assessor_0.run()
+    # # Run the Bayesian optimiser threads
+    # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
+    #     optimisation_parameters,
+    #     collector_model_assessors[7],
+    #     (collector_model_index_to_results_map := {}),
+    #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+    #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+    #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+    #     initial_points=(_initial_points := 10),
+    #     num_iterations=(_num_iterations := 4),
+    #     run_id=0,
+    # )
+    # bayesian_assessor_0.run()
 
     # bayesian_assessor_1 = BayesianPVTModelOptimiserSeries(
     #     date_and_time,
@@ -2050,26 +2048,30 @@ def main(unparsed_args: list[Any]) -> None:
     # Setup the Bayesian optimiser threads.
     bayesian_assessors: list[BayesianPVTModelOptimiserThread] = []
     collector_model_index_to_results_map: dict[str, dict[str, float] | float] = {}
-    for index, collector_model_assessor in enumerate(collector_model_assessors):
-        if collector_model_assessor.collector_type == CollectorType.PVT:
-            bayesian_assessors.append(
-                bayesian_assessor := BayesianPVTModelOptimiserThread(
-                    date_and_time,
-                    optimisation_parameters,
-                    collector_model_assessor,
-                    collector_model_index_to_results_map,
-                    weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-                    weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-                    weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-                    initial_points=parsed_args.initial_points,
-                    num_iterations=parsed_args.num_iterations,
-                    run_id=index,
-                )
+    for index, collector_model_assessor in enumerate(collector_model_assessors[7:8]):
+        # if collector_model_assessor.collector_type == CollectorType.PVT:
+        bayesian_assessors.append(
+            bayesian_assessor := BayesianPVTModelOptimiserThread(
+                date_and_time,
+                optimisation_parameters,
+                collector_model_assessor,
+                collector_model_index_to_results_map,
+                weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+                weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+                weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+                initial_points=parsed_args.initial_points,
+                num_iterations=parsed_args.num_iterations,
+                run_id=index,
             )
-            bayesian_assessor.start()
+        )
+        bayesian_assessor.start()
 
     for bayesian_assessor in bayesian_assessors:
         bayesian_assessor.join()
+
+    import pdb
+
+    pdb.set_trace()
 
     # Determine the number of steady-state runs that took place.
     with open(base_model_input_filepaths[0], "r") as steady_state_file:

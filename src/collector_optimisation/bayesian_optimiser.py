@@ -55,18 +55,18 @@ def _save_max_results(*, date_and_time: DateAndTime, **kwargs) -> None:
 
     """
 
-    # Acquire the lock on saving the file.
-    OPTIMUM_FILE_LOCK.acquire()
-
-    row = pd.DataFrame(
-        {
-            "target": kwargs["target"],
-            "run_number": kwargs["run_number"],
-            **{key: [value] for key, value in kwargs["params"].items()},
-        }
-    )
-
     try:
+        # Acquire the lock on saving the file.
+        OPTIMUM_FILE_LOCK.acquire()
+
+        row = pd.DataFrame(
+            {
+                "target": kwargs["target"],
+                "run_number": kwargs["run_number"],
+                **{key: [value] for key, value in kwargs["params"].items()},
+            }
+        )
+
         # Read any existing runs that have taken place.
         if os.path.isfile(
             MAX_RESULTS_FILENAME.format(

@@ -42,6 +42,10 @@ from tqdm import tqdm
 
 from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
 
+# CHANGE_DIR_LOCK:
+#   Lock used to change directory.
+CHANGE_DIR_LOCK: threading.Lock = threading.Lock()
+
 # FILE_LOCK:
 #   Lock used to lock the file for storing information based on runs and fitness
 # information.
@@ -54,6 +58,10 @@ HUANG_ET_AL_DIRECTORY: str = "huang_et_al_sspvt"
 # LOCATIONS_FOLDERNAME:
 #   The name of the folder where locations are stored.
 LOCATIONS_FOLDERNAME: str = "locations"
+
+# MATLAB_BUFFER_TIME:
+#   Buffer time before launching matlab runs.
+MATLAB_BUFFER_TIME: int = 15
 
 # MAX_PARALLEL_RUNS:
 #   The maximum number of possible parallel runs, used for id's in the case that these
@@ -195,24 +203,41 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
 
     # Run the model from the SSPVT directory.
     try:
-        os.chdir(HUANG_ET_AL_DIRECTORY)
-        subprocess.run(
-            (
-                'matlab -nodesktop -nosplash -nojvm -r "panel_filename='
-                + f"'{os.path.basename(panel_filename)}';"
-                + f'suffix={suffix};sspvt_bayesian"'
-            ).split(" ")
-        )
+        try:
+            # Switch to the modelling directory to launch the command.
+            CHANGE_DIR_LOCK.acquire()
+            os.chdir(HUANG_ET_AL_DIRECTORY)
+
+            subprocess.run(
+                (
+                    'matlab -nodesktop -nosplash -nojvm -r "panel_filename='
+                    + f"'{os.path.basename(panel_filename)}';"
+                    + f'suffix={suffix};sspvt_bayesian"'
+                ).split(" ")
+            )
+
+            # Switch back up, and release the lock.
+            os.chdir("..")
+            time.sleep(MATLAB_BUFFER_TIME)
+
+        finally:
+            CHANGE_DIR_LOCK.release()
 
         # Wait until the output file exists.
         is_file: bool = os.path.isfile(
             output_filename := os.path.join(
-                SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
+                HUANG_ET_AL_DIRECTORY,
+                output_basename:=os.path.join(SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
                 SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
                     panel_filename=os.path.basename(panel_filename), suffix=suffix
-                ),
+                )),
             )
         )
+
+        import pdb
+
+        pdb.set_trace()
+
         with tqdm(
             [None], desc="Running MATLAB code", unit="simulation", leave=False, total=1
         ) as pbar:
@@ -226,18 +251,16 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
     finally:
         # Try to move the output file up a directory.
         try:
+            # Ensure that the directory is not the huang directory.
+            CHANGE_DIR_LOCK.acquire()
             shutil.move(
-                output_filename,
-                os.path.join("..", output_filename),
+                os.path.join(HUANG_ET_AL_DIRECTORY, output_basename),
+                output_basename,
             )
+            CHANGE_DIR_LOCK.release()
         except Exception:
             pass
 
-        # Try to return the process up a directory.
-        try:
-            os.chdir("..")
-        except Exception:
-            pass
 
 
 @contextmanager
@@ -309,6 +332,7 @@ def temporary_collector_file(
         JSON = "json"
 
     # Open the data and parse the data.
+    CHANGE_DIR_LOCK.acquire()
     with open(base_collector_filepath, "r", encoding="UTF-8") as collector_file:
         if base_collector_filepath.endswith(".yaml"):
             base_collector_data = yaml.safe_load(collector_file)
@@ -324,6 +348,8 @@ def temporary_collector_file(
 
         else:
             raise Exception("File not implemented.")
+
+    CHANGE_DIR_LOCK.release()
 
     # Determine the initial width of the collector.
     try:
@@ -344,6 +370,7 @@ def temporary_collector_file(
         _vary_parameter(base_collector_data, key, value)
 
     # Make the temporary directory if it doesn't exist.
+    CHANGE_DIR_LOCK.acquire()
     if temp_upper_dirname is not None:
         os.makedirs(temp_upper_dirname, exist_ok=True)
         temp_dirname: str = os.path.join(temp_upper_dirname, TEMPORARY_FILE_DIRECTORY)
@@ -355,8 +382,11 @@ def temporary_collector_file(
     if not os.path.isdir(temp_dirname):
         os.makedirs(temp_dirname, exist_ok=True)
 
+    CHANGE_DIR_LOCK.release()
+
     # Save these data to a temporary file
     try:
+        CHANGE_DIR_LOCK.acquire()
         with open(
             (
                 filename := os.path.join(
@@ -376,6 +406,7 @@ def temporary_collector_file(
             elif loader == Loader.JSON:
                 json.dump(base_collector_data, temp_file, indent=4)
 
+        CHANGE_DIR_LOCK.release()
         try:
             current_collector_width: float | None = base_collector_data[
                 "pvt_collector"
@@ -425,8 +456,11 @@ def temporary_steady_state_file(
 
     """
 
+    CHANGE_DIR_LOCK.acquire()
     with open(base_steady_state_filepath, "r", encoding="UTF-8") as steady_state_file:
         base_steady_state_data = yaml.safe_load(steady_state_file)
+
+    CHANGE_DIR_LOCK.release()
 
     # Assert that all input data is of the same length.
     assert len(solar_irradiance_data) == len(temperature_data) == len(wind_speed_data)
@@ -455,6 +489,7 @@ def temporary_steady_state_file(
 
     # Save these data to a temporary file
     try:
+        CHANGE_DIR_LOCK.acquire()
         with open(
             (
                 filename := os.path.join(
@@ -468,9 +503,16 @@ def temporary_steady_state_file(
         ) as temp_file:
             data_frame.to_csv(temp_file, index=None)
 
+        CHANGE_DIR_LOCK.release()
+
         yield filename
 
     finally:
+        try:
+            CHANGE_DIR_LOCK.release()
+        except Exception:
+            pass
+
         try:
             os.remove(filename)
         except FileNotFoundError:
@@ -518,11 +560,16 @@ def temporary_sspvt_steady_state_files(
     assert len(solar_irradiance_data) == len(temperature_data) == len(wind_speed_data)
 
     # Determine the length of the input files required.
+    CHANGE_DIR_LOCK.acquire()
     with open(base_coolant_input_filepath, "r", encoding="UTF-8") as coolant_file:
         base_coolant_input_data = pd.read_csv(coolant_file, header=None).transpose()
 
+    CHANGE_DIR_LOCK.release()
+    CHANGE_DIR_LOCK.acquire()
     with open(base_fluid_input_filepath, "r", encoding="UTF-8") as fluid_file:
         base_fluid_input_data = pd.read_csv(fluid_file, header=None).transpose()
+
+    CHANGE_DIR_LOCK.release()
 
     # Assert that these files are of the same length
     assert len(base_coolant_input_data) == len(base_fluid_input_data)
@@ -570,7 +617,10 @@ def temporary_sspvt_steady_state_files(
             temp_upper_dirname, TEMPORARY_FILE_DIRECTORY
         )
         # temporary_file_directory: str = temp_upper_dirname
+        CHANGE_DIR_LOCK.acquire()
         os.makedirs(temporary_file_directory, exist_ok=True)
+        CHANGE_DIR_LOCK.release()
+
     else:
         temporary_file_directory = TEMPORARY_FILE_DIRECTORY
 
@@ -593,6 +643,7 @@ def temporary_sspvt_steady_state_files(
                 desc="Creating temporary weather files",
                 leave=False,
             ):
+                CHANGE_DIR_LOCK.acquire()
                 os.makedirs(temporary_file_directory, exist_ok=True)
                 with open(
                     os.path.join(
@@ -605,12 +656,15 @@ def temporary_sspvt_steady_state_files(
                 ) as temp_file:
                     data_frame.to_csv(temp_file, index=None, header=None)
 
+                CHANGE_DIR_LOCK.release()
+
             yield suffix
 
         finally:
             try:
                 for filepath in temporary_files_and_data.keys():
                     try:
+                        CHANGE_DIR_LOCK.acquire()
                         os.remove(
                             os.path.join(
                                 temporary_file_directory,
@@ -620,6 +674,8 @@ def temporary_sspvt_steady_state_files(
                                 ),
                             ).replace(".csv", f"_{suffix}.csv")
                         )
+                        CHANGE_DIR_LOCK.release()
+
                     except FileNotFoundError:
                         pass
             except NameError:
@@ -709,7 +765,7 @@ class WeightingCalculator:
 
         return (
             f"WeightingCalculator(el={self.electrical_weighting:.2g}, "
-            + f"th{'_HT' * self._coolant_weighting is not None}="
+            + f"th{'_HT' if self._coolant_weighting is not None else ''}="
             + f"{self.thermal_weighting:.2g}"
             + (
                 f", th_LT={self.coolant_weighting:.2g}"
@@ -755,7 +811,12 @@ class WeightingCalculator:
         return Fitness(
             (self.electrical_weighting / self.total_output_weighting)
             * electrical_fitness
-            + (self.thermal_weighting / self.total_output_weighting) * thermal_fitness,
+            + (self.thermal_weighting / self.total_output_weighting) * thermal_fitness
+            + (
+                self.coolant_weighting
+                * (coolant_fitness if coolant_fitness is not None else 0)
+                / self.total_output_weighting
+            ),
             electrical_fitness,
             thermal_fitness,
             coolant_fitness,
@@ -1257,12 +1318,15 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
             # FIXME: Delete file once opened.
 
             with open(
-                (this_bayesian_run_output:=os.path.join(
-                    SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
-                    SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
-                        panel_filename=os.path.basename(temporary_sspvt_filepath), suffix=suffix
-                    ),
-                )),
+                (
+                    this_bayesian_run_output := os.path.join(
+                        SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
+                        SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
+                            panel_filename=os.path.basename(temporary_sspvt_filepath),
+                            suffix=suffix,
+                        ),
+                    )
+                ),
                 "r",
                 encoding="UTF-8",
             ) as sspvt_bayesian_output_file:
@@ -1317,10 +1381,6 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
 
         """
 
-        import pdb
-
-        pdb.set_trace(header="SSPV-T model calling coming up")
-
         # Make temporary files as needed based on the inputs for the run.
         with temporary_collector_file(
             self.base_sspvt_filepath,
@@ -1347,12 +1407,10 @@ class SSPVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.SS
                     temp_sspvt_filepath, temp_steady_state_suffix
                 )
 
-        import pdb
-
-        pdb.set_trace(header="SSPV-T model run, fitness to be computed.")
-
         # Use the run weights for each of the runs that were returned.
-        coolant_fitness = sum(output_data.get("P_cool", [0])) / (total_input_power:=sum(output_data["P_in"]))
+        coolant_fitness = sum(output_data.get("P_cool", [0])) / (
+            total_input_power := sum(output_data["P_in"])
+        )
         electrical_fitness = sum(output_data.get("P_el", [0])) / total_input_power
         thermal_fitness = sum(output_data.get("P_fl", [0])) / total_input_power
 

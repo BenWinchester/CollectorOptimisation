@@ -42,114 +42,154 @@ pvt:
     thermal_weighting: 0.0
 
 sspvt:
-  - coolant_weighting: 6
+  # - coolant_weighting: 6
+  #   electrical_weighting: 0
+  #   thermal_weighting: 0
+
+  # - coolant_weighting: 5
+  #   electrical_weighting: 0
+  #   thermal_weighting: 1
+
+  # - coolant_weighting: 4
+  #   electrical_weighting: 0
+  #   thermal_weighting: 2
+
+  # - coolant_weighting: 3
+  #   electrical_weighting: 0
+  #   thermal_weighting: 3
+
+  # - coolant_weighting: 2
+  #   electrical_weighting: 0
+  #   thermal_weighting: 4
+
+  # - coolant_weighting: 1
+  #   electrical_weighting: 0
+  #   thermal_weighting: 5
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 0
+  #   thermal_weighting: 6
+
+  # - coolant_weighting: 5
+  #   electrical_weighting: 1
+  #   thermal_weighting: 0
+
+  # - coolant_weighting: 4
+  #   electrical_weighting: 1
+  #   thermal_weighting: 1
+
+  # - coolant_weighting: 3
+  #   electrical_weighting: 1
+  #   thermal_weighting: 2
+
+  # - coolant_weighting: 2
+  #   electrical_weighting: 1
+  #   thermal_weighting: 3
+
+  # - coolant_weighting: 1
+  #   electrical_weighting: 1
+  #   thermal_weighting: 4
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 1
+  #   thermal_weighting: 5
+
+  # - coolant_weighting: 4
+  #   electrical_weighting: 2
+  #   thermal_weighting: 0
+
+  # - coolant_weighting: 3
+  #   electrical_weighting: 2
+  #   thermal_weighting: 1
+
+  # - coolant_weighting: 2
+  #   electrical_weighting: 2
+  #   thermal_weighting: 2
+
+  # - coolant_weighting: 1
+  #   electrical_weighting: 2
+  #   thermal_weighting: 3
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 2
+  #   thermal_weighting: 4
+
+  # - coolant_weighting: 3
+  #   electrical_weighting: 3
+  #   thermal_weighting: 0
+
+  # - coolant_weighting: 2
+  #   electrical_weighting: 3
+  #   thermal_weighting: 1
+
+  # - coolant_weighting: 1
+  #   electrical_weighting: 3
+  #   thermal_weighting: 2
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 3
+  #   thermal_weighting: 3
+
+  # - coolant_weighting: 2
+  #   electrical_weighting: 4
+  #   thermal_weighting: 0
+
+  # - coolant_weighting: 1
+  #   electrical_weighting: 4
+  #   thermal_weighting: 1
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 4
+  #   thermal_weighting: 2
+
+  # - coolant_weighting: 1
+  #   electrical_weighting: 5
+  #   thermal_weighting: 0
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 5
+  #   thermal_weighting: 1
+
+  # - coolant_weighting: 0
+  #   electrical_weighting: 6
+  #   thermal_weighting: 0
+
+  - coolant_weighting: 3
     electrical_weighting: 0
     thermal_weighting: 0
 
-  - coolant_weighting: 5
-    electrical_weighting: 0
-    thermal_weighting: 1
+  - coolant_weighting: 0
+    electrical_weighting: 3
+    thermal_weighting: 0
 
-  - coolant_weighting: 4
-    electrical_weighting: 0
-    thermal_weighting: 2
-
-  - coolant_weighting: 3
+  - coolant_weighting: 0
     electrical_weighting: 0
     thermal_weighting: 3
 
   - coolant_weighting: 2
+    electrical_weighting: 1
+    thermal_weighting: 0
+
+  - coolant_weighting: 2
     electrical_weighting: 0
-    thermal_weighting: 4
+    thermal_weighting: 1
+
+  - coolant_weighting: 1
+    electrical_weighting: 2
+    thermal_weighting: 0
+
+  - coolant_weighting: 0
+    electrical_weighting: 2
+    thermal_weighting: 1
 
   - coolant_weighting: 1
     electrical_weighting: 0
-    thermal_weighting: 5
-
-  - coolant_weighting: 0
-    electrical_weighting: 0
-    thermal_weighting: 6
-
-  - coolant_weighting: 5
-    electrical_weighting: 1
-    thermal_weighting: 0
-
-  - coolant_weighting: 4
-    electrical_weighting: 1
-    thermal_weighting: 1
-
-  - coolant_weighting: 3
-    electrical_weighting: 1
-    thermal_weighting: 2
-
-  - coolant_weighting: 2
-    electrical_weighting: 1
-    thermal_weighting: 3
-
-  - coolant_weighting: 1
-    electrical_weighting: 1
-    thermal_weighting: 4
-
-  - coolant_weighting: 0
-    electrical_weighting: 1
-    thermal_weighting: 5
-
-  - coolant_weighting: 4
-    electrical_weighting: 2
-    thermal_weighting: 0
-
-  - coolant_weighting: 3
-    electrical_weighting: 2
-    thermal_weighting: 1
-
-  - coolant_weighting: 2
-    electrical_weighting: 2
-    thermal_weighting: 2
-
-  - coolant_weighting: 1
-    electrical_weighting: 2
-    thermal_weighting: 3
-
-  - coolant_weighting: 0
-    electrical_weighting: 2
-    thermal_weighting: 4
-
-  - coolant_weighting: 3
-    electrical_weighting: 3
-    thermal_weighting: 0
-
-  - coolant_weighting: 2
-    electrical_weighting: 3
-    thermal_weighting: 1
-
-  - coolant_weighting: 1
-    electrical_weighting: 3
     thermal_weighting: 2
 
   - coolant_weighting: 0
-    electrical_weighting: 3
-    thermal_weighting: 3
-
-  - coolant_weighting: 2
-    electrical_weighting: 4
-    thermal_weighting: 0
-
-  - coolant_weighting: 1
-    electrical_weighting: 4
-    thermal_weighting: 1
-
-  - coolant_weighting: 0
-    electrical_weighting: 4
+    electrical_weighting: 1
     thermal_weighting: 2
 
   - coolant_weighting: 1
-    electrical_weighting: 5
-    thermal_weighting: 0
-
-  - coolant_weighting: 0
-    electrical_weighting: 5
+    electrical_weighting: 1
     thermal_weighting: 1
-
-  - coolant_weighting: 0
-    electrical_weighting: 6
-    thermal_weighting: 0
