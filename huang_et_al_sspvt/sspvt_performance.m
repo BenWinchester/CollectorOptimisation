@@ -67,7 +67,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
                 Keva=0.35;
                 Wad=0.0005;
                 Kad=0.85;
-                Kinsul=0.005;%thermal conductivity of the insulation layer
+                Kinsul=0.035;%thermal conductivity of the insulation layer
         
                 titanl=35*pi/180; % title angle of collector, rad%
                 Wgap1=0.01;%The gap thickness between top glass and the filter
@@ -97,7 +97,7 @@ function [eff_th_fluid, eff_th_cool, eff_th_total, eff_el, T_r, T_sspvt, Energy,
     %Trgfl1=Trgfl1*(0.92/0.975);%change the transmissivity of the glass
     
     %bottom glass of the filter
-    [Trgfl2,Relfl2,Abgfl2]=select_filter('anti_reflective_thin_glass');
+    [Trgfl2,Relfl2,Abgfl2]=select_filter('heat_absorb_glass');
     %Trgfl2=Trgfl2*(0.92/0.975);%change the transmissivity of the glass
     
     %working fluid in the filter

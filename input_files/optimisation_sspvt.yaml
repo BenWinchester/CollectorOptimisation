@@ -5,39 +5,38 @@
 # Copyright 2024, Ben Winchester                                                       #
 ########################################################################################
 
-########################
-# Operation parameters #
-########################
-
-mass_flow_rate:  # Segment-only [l/h]
-  min: 0.001
-  max: 200
-
 #####################
 # Design parameters #
 #####################
-
-pv/thermal_coefficient:
-  min: 0.035
-  max: 0.1
-
-glass/absorptivity:
-  min: 0.0
-  max: 0.2
 
 glass/emissivity:
   min: 0.02
   max: 1.0
 
-pv/reference_efficiency:
-  min: 0.06
-  max: 0.25
+filter_glass/emissivity:
+  min: 0.02
+  max: 1.0
 
-pvt_collector/width:
-  min: 0.02965517
-  max: 0.215
-
-air_gap/thickness:
-  min: 0.01
+filter_width:
+  min: 0.001
   max: 0.1
 
+# filter/mass_flow_rate:
+#   min: 0.001
+#   max: 100
+
+pv/absorptivity:
+  min: 0.8
+  max: 1.0
+
+pv/thermal_coefficient:
+  min: 0.00035
+  max: 0.011
+
+coolant_width:
+  min: 0.001
+  max: 0.1
+
+insulation/thickness:
+  min: 0.003
+  max: 0.5
