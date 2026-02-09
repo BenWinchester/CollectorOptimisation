@@ -227,10 +227,12 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
         is_file: bool = os.path.isfile(
             output_filename := os.path.join(
                 HUANG_ET_AL_DIRECTORY,
-                output_basename:=os.path.join(SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
-                SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
-                    panel_filename=os.path.basename(panel_filename), suffix=suffix
-                )),
+                output_basename := os.path.join(
+                    SSPVT_BAYESIAN_OUTPUT_DIRECTORY,
+                    SSPVT_BAYESIAN_OUTPUT_FILENAME.format(
+                        panel_filename=os.path.basename(panel_filename), suffix=suffix
+                    ),
+                ),
             )
         )
 
@@ -260,7 +262,6 @@ def sspvt_model_main(panel_filename: str, suffix: str) -> None:
             CHANGE_DIR_LOCK.release()
         except Exception:
             pass
-
 
 
 @contextmanager

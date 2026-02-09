@@ -23,10 +23,11 @@ import random
 import os
 import sys
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from dataclasses import dataclass, field
-from matplotlib import rc
+from matplotlib import font_manager, rc, rcParams
 from scipy.optimize import curve_fit
 from typing import Any, Generator
 
@@ -63,6 +64,10 @@ AUTO_GENERATED: str = "auto_generated"
 #   The name of the directory containing base collector files.
 COLLECTOR_FILES_DIRECTORY: str = "collector_designs"
 
+# INDEX:
+#   Index used for plotting.
+INDEX: int = 2
+
 # LOCATIONS_FILENAME:
 #   The name of the file containing the locations information.
 LOCATIONS_FILENAME: str = "locations.yaml"
@@ -70,6 +75,11 @@ LOCATIONS_FILENAME: str = "locations.yaml"
 # MODEL_INPUTS_DIRECTORY:
 #   The directory containing model inputs.
 MODEL_INPUTS_DIRECTORY: str = "steady_state_data"
+
+# MM:
+#   The size of a mm, in inches.
+MM: float = 1 / 25.4
+
 
 # OPTIMISATION_INPUTS_FILE
 #   The name of the optimisations inputs file.
@@ -112,9 +122,30 @@ WEATHER_SAMPLE_FILENAME: str = "weather_data_sample"
 WIND_FILENAME: str = "ninja_wind_{lat:.4f}_{lon:.4f}_corrected.csv"
 
 # Seaborn setup
+
+# Plotting context
+rc("font", **{"family": "sans-serif", "sans-serif": ["Arial"], "size": 5})
+sns.set_context(
+    "notebook", rc={"font.size": 5, "axes.titlesize": 5, "axes.labelsize": 5}
+)
+sns.set_style("ticks")
+
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+# plt.rcParams['text.usetex'] = True
+# plt.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}'] #for \text command
+
+rcParams["pdf.fonttype"] = 42
+rcParams["ps.fonttype"] = 42
+
+plt.rcParams["font.size"] = 5
+
+
+TOTEX_HEADER: str = "Other TOTEX"
+
+# Seaborn setup
 rc("font", **{"family": "sans-serif", "sans-serif": ["Arial"]})
-sns.set_context("talk")
-sns.set_style("whitegrid")
+
 un_color_palette = sns.color_palette(
     [
         # "#C51A2E",
@@ -643,9 +674,6 @@ def _parse_files(
             weather_sample.columns = pd.Index((column_headers))
 
             # Plot and display to the user.
-            sns.set_context("talk")
-            sns.set_style("ticks")
-
             sns.set_palette(
                 [
                     "#2CBCE0",
@@ -697,9 +725,6 @@ def _parse_files(
     # Code for plotting and visualising the weather-data distribution #
     ###################################################################
 
-    sns.set_context("talk")
-    sns.set_style("ticks")
-
     sns.set_palette(
         [
             "#2CBCE0",
@@ -738,7 +763,7 @@ def _parse_files(
         transparent=True,
     )
     plt.savefig(
-        f"scatter_plot_{sample_type.value}_weather_{date_and_time.date}_{date_and_time.time}.pdf",
+        f"scatter_plot_{sample_type.value}_weather_{date_and_time.date}_{date_and_time.time}_{INDEX}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
@@ -767,7 +792,7 @@ def _parse_files(
     #     linewidth=0,
     #     color="C1",
     # )
-    # plt.savefig("scatter_plot_grid_weather.pdf", bbox_inches="tight", pad_inches=0)
+    # plt.savefig("scatter_plot_grid_weather_{INDEX}.pdf", bbox_inches="tight", pad_inches=0)
 
     sns.jointplot(
         modelling_weather_data,
@@ -791,13 +816,16 @@ def _parse_files(
         transparent=True,
     )
     plt.savefig(
-        f"hex_plot_weather_data_{date_and_time.date}_{date_and_time.time}.pdf",
+        f"hex_plot_weather_data_{date_and_time.date}_{date_and_time.time}_{INDEX}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
 
     sns.jointplot(
-        modelling_weather_data[(modelling_weather_data["irradiance_total"] >= 800) | (modelling_weather_data["temperature"] >= 20)],
+        modelling_weather_data[
+            (modelling_weather_data["irradiance_total"] >= 800)
+            | (modelling_weather_data["temperature"] >= 20)
+        ],
         x="irradiance_total",
         y="temperature",
         linewidth=0,
@@ -820,25 +848,25 @@ def _parse_files(
         transparent=True,
     )
     plt.savefig(
-        f"hex_plot_weather_data_over_noct_w_marginal_{date_and_time.date}_{date_and_time.time}.pdf",
+        f"hex_plot_weather_data_over_noct_w_marginal_{date_and_time.date}_{date_and_time.time}_{INDEX}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
 
-    fig, axes = plt.subplots(2, 1, figsize=(48/5, 48/5))
-    palette=sns.blend_palette(["#FFFFFF", "#27BFE6", "#0A77AA"], 5, as_cmap=True)
+    fig, axes = plt.subplots(2, 1, figsize=(180 * MM, 180 * MM))
+    palette = sns.blend_palette(["#FFFFFF", "#27BFE6", "#0A77AA"], 5, as_cmap=True)
     sns.histplot(
         modelling_weather_data[(modelling_weather_data["irradiance_total"] >= 800)],
         x="irradiance_total",
         y="temperature",
         linewidth=0,
-        bins=(20,20),
+        bins=(20, 20),
         # height=32 / 5,
         # ratio=4,
         # marginal_kws={"bins": 40},
         # kind="hist",
         # alpha=0.3,
-        ax=(axis:=axes[0]),
+        ax=(axis := axes[0]),
         cmap=palette,
         # cbar=True,
         # cbar_kws={"label": "Hours", "format": "%.0f"},
@@ -854,7 +882,9 @@ def _parse_files(
     )
     scalar_mappable = plt.cm.ScalarMappable(
         cmap=mcolors.LinearSegmentedColormap.from_list(
-            "Custom", sns.blend_palette(["#FFFFFF", "#27BFE6", "#0A77AA"], 5).as_hex(), 5
+            "Custom",
+            sns.blend_palette(["#FFFFFF", "#27BFE6", "#0A77AA"], 5).as_hex(),
+            5,
         ),
         norm=norm,
     )
@@ -865,19 +895,19 @@ def _parse_files(
         pad=(_pad := 0.025),
     )
 
-    palette=sns.blend_palette(["#FFFFFF", "#FBC412", "#E04606"], 5, as_cmap=True)
+    palette = sns.blend_palette(["#FFFFFF", "#FBC412", "#E04606"], 5, as_cmap=True)
     sns.histplot(
         modelling_weather_data[(modelling_weather_data["temperature"] >= 20)],
         x="irradiance_total",
         y="temperature",
         linewidth=0,
-        bins=(20,20),
+        bins=(20, 20),
         # height=32 / 5,
         # ratio=4,
         # marginal_kws={"bins": 40},
         # kind="hist",
         # alpha=0.3,
-        ax=(axis:=axes[1]),
+        ax=(axis := axes[1]),
         cmap=palette,
         # cbar=True,
         # cbar_kws={"label": "Hours", "format": "%.0f"},
@@ -893,7 +923,9 @@ def _parse_files(
     )
     scalar_mappable = plt.cm.ScalarMappable(
         cmap=mcolors.LinearSegmentedColormap.from_list(
-            "Custom", sns.blend_palette(["#FFFFFF", "#FBC412", "#E04606"], 12).as_hex(), 12
+            "Custom",
+            sns.blend_palette(["#FFFFFF", "#FBC412", "#E04606"], 12).as_hex(),
+            12,
         ),
         norm=norm,
     )
@@ -911,7 +943,7 @@ def _parse_files(
         transparent=True,
     )
     plt.savefig(
-        f"hex_plot_weather_data_over_noct_{date_and_time.date}_{date_and_time.time}.pdf",
+        f"hex_plot_weather_data_over_noct_{date_and_time.date}_{date_and_time.time}_{INDEX}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
@@ -919,7 +951,7 @@ def _parse_files(
     # modelling_weather_data["rounded_wind_speed"] = [
     #     int(entry) for entry in modelling_weather_data["wind_speed"]
     # ]
-    # fig, axes = plt.subplots(4, 4, figsize=(48 / 5, 48 / 5))
+    # fig, axes = plt.subplots(4, 4, figsize=(180 * MM, 180 * MM))
     # fig.subplots_adjust(hspace=0.73, wspace=0.45)
     # flat_axes = np.argwhere(axes)
     # sns.set_palette(sns.cubehelix_palette(start=0.6, rot=-0.4))
@@ -956,7 +988,7 @@ def _parse_files(
     #     ax.set_ylabel("Temperature / $^\circ$C")
     #     ax.set_title(f"Wind speed = {rounded_wind_speed} m/s")
 
-    # plt.savefig("hist_plot_wind_speeds.pdf", bbox_inches="tight", pad_inches=0)
+    # plt.savefig("hist_plot_wind_speeds_{INDEX}.pdf", bbox_inches="tight", pad_inches=0)
 
     # Parse the pareto-front informtion and return wrappers based on this.
     with open(
@@ -1242,7 +1274,7 @@ def plot_pareto_front(
     }
 
     # Setup a new figure for the Parety front.
-    plt.figure(figsize=(48 / 5, 32 / 5))
+    plt.figure(figsize=(180 * MM, 120 * MM))
 
     sns.scatterplot(
         runs_data[
@@ -1322,10 +1354,9 @@ def plot_pareto_front(
         color="grey",
     )
 
-    reference_collector_runs[
-        "normalised_electrical_fitness"
-    ] = reference_collector_runs["electrical_fitness"] / (
-        max_electrical_efficiency * energy_input
+    reference_collector_runs["normalised_electrical_fitness"] = (
+        reference_collector_runs["electrical_fitness"]
+        / (max_electrical_efficiency * energy_input)
     )
     reference_collector_runs["normalised_thermal_fitness"] = reference_collector_runs[
         "thermal_fitness"
@@ -1368,35 +1399,55 @@ def plot_pareto_front(
                     "#662506",
                 ]
             ),
-            hue="Collector name",
+            hue="Collector_name",
             marker="D",
             edgecolor="#232323",
         )
 
     # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
     plt.xlabel(
-        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$"
+        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
+        fontsize=7,
     )
     plt.ylabel(
-        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$"
+        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$",
+        fontsize=7,
     )
     handles, _ = plt.gca().get_legend_handles_labels()
     plt.legend(
-        handles, list(labels.values()) + _[len(labels) :], ncol=1, loc="lower left"
+        handles,
+        list(labels.values()) + _[len(labels) :],
+        ncol=1,
+        loc="lower left",
+        fontsize=7,
     )
     plt.xlim(0, 1)
     plt.ylim(0, 1)
 
     (ax1 := plt.gca()).legend(
-        handles[:8], list(labels.values()) + [_[len(labels)]], loc="upper left"
+        handles[:8],
+        list(labels.values()) + [_[len(labels)]],
+        loc="upper left",
+        fontsize=7,
+        labelspacing=1.1,
+        ncols=2,
     )
-    (ax1.twinx()).legend(
+    ax2_legend = (ax2 := ax1.twinx()).legend(
         handles[8:],
         _[len(labels) + 1 :],
         ncol=1,
-        title=r"Herrando $\mathit{et}$ $\mathit{al}$. review",
         loc="lower left",
+        fontsize=7,
+        labelspacing=1.1,
+        ncols=2,
     )
+    ax2_legend.set_title(
+        title=r"Herrando $\mathit{et}$ $\mathit{al}$. review",
+        prop=font_manager.FontProperties(size=7),
+    )
+    ax1.set_xticklabels(ax1.get_xticklabels(), fontdict={"size": 7})
+    ax1.set_yticklabels(ax1.get_yticklabels(), fontdict={"size": 7})
+    ax2.set_yticklabels(ax2.get_yticklabels(), fontdict={"size": 7})
 
     # handles, _ = (axis := plt.gca()).get_legend_handles_labels()
     # plt.legend(handles, labels + ["Solimpeks Powervolt"])
@@ -1408,7 +1459,7 @@ def plot_pareto_front(
         transparent=True,
     )
     plt.savefig(
-        f"pareto_front_{date_and_time.date}_{date_and_time.time}.pdf",
+        f"pareto_front_{date_and_time.date}_{date_and_time.time}_{INDEX}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
@@ -1467,7 +1518,7 @@ def plot_pareto_front(
 
         return StopIteration()
 
-    fig, axes = plt.subplots(3, 3, figsize=(48 / 5, 48 / 5))
+    fig, axes = plt.subplots(3, 3, figsize=(180 * MM, 180 * MM))
     fig.subplots_adjust(hspace=0.55, wspace=0.45)
 
     sns.set_palette(un_color_palette)
@@ -1558,7 +1609,7 @@ def plot_pareto_front(
             rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}",
             fontweight="bold",
         )
-        axis.text(-0.25, 1.1125, next(subplots_labels), fontsize=16, fontweight="bold")
+        axis.text(-0.25, 1.1125, next(subplots_labels), fontsize=7, fontweight="bold")
 
     axes[2, 1].set_visible(False)
     axes[2, 2].set_visible(False)
@@ -1569,6 +1620,7 @@ def plot_pareto_front(
         r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
         ha="center",
         va="center",
+        fontsize=7,
     )
     fig.text(
         0.04,
@@ -1577,11 +1629,13 @@ def plot_pareto_front(
         ha="center",
         va="center",
         rotation="vertical",
+        fontsize=7,
     )
     fig.legend(
         [line],
         ["Optimisation front(s)"],
         loc="lower right",
+        fontsize=7,
     )
 
     plt.savefig(
@@ -1591,7 +1645,7 @@ def plot_pareto_front(
         transparent=True,
     )
     plt.savefig(
-        f"pareto_subplots_{date_and_time.date}_{date_and_time.time}.pdf",
+        f"pareto_subplots_{date_and_time.date}_{date_and_time.time}_{INDEX}.pdf",
         bbox_inches="tight",
         pad_inches=0,
     )
@@ -1670,7 +1724,7 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_electrical_with_kde_{variable.replace('/', '_')}.pdf",
+            f"optimum_electrical_with_kde_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
@@ -1731,7 +1785,7 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_thermal_with_kde_{variable.replace('/', '_')}.pdf",
+            f"optimum_thermal_with_kde_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
@@ -1741,7 +1795,7 @@ def plot_pareto_front(
 
     for variable in tqdm(design_variables, desc="Plotting design impact", leave=True):
         # Plot the electrical fitness with only maximal values.
-        plt.figure(figsize=(48 / 5, 32 / 5))
+        plt.figure(figsize=(180 * MM, 120 * MM))
 
         sns.scatterplot(
             runs_data[
@@ -1786,14 +1840,14 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_electrical_maximal_runs_{variable.replace('/', '_')}.pdf",
+            f"optimum_electrical_maximal_runs_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
         )
 
         # Plot the electrical fitness with all points on the Pareto front.
-        plt.figure(figsize=(48 / 5, 32 / 5))
+        plt.figure(figsize=(180 * MM, 120 * MM))
 
         sns.scatterplot(
             runs_data[
@@ -1841,14 +1895,14 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_electrical_on_pareto_{variable.replace('/', '_')}.pdf",
+            f"optimum_electrical_on_pareto_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
         )
 
         # Plot the points on the Pareto front and which are optimal.
-        plt.figure(figsize=(48 / 5, 32 / 5))
+        plt.figure(figsize=(180 * MM, 120 * MM))
 
         sns.scatterplot(
             runs_data[
@@ -1903,17 +1957,17 @@ def plot_pareto_front(
             f"optimum_electrical_on_pareto_with_optimal_{variable.replace('/', '_')}.png",
             bbox_inches="tight",
             pad_inches=PNG_PAD_INCHES,
-            transparent=True
+            transparent=True,
         )
         plt.savefig(
-            f"optimum_electrical_on_pareto_with_optimal_{variable.replace('/', '_')}.pdf",
+            f"optimum_electrical_on_pareto_with_optimal_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
         )
 
         # Plot the thermal fitness with only maximal values.
-        plt.figure(figsize=(48 / 5, 32 / 5))
+        plt.figure(figsize=(180 * MM, 120 * MM))
 
         sns.scatterplot(
             runs_data[
@@ -1958,14 +2012,14 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_thermal_maximal_runs_{variable.replace('/', '_')}.pdf",
+            f"optimum_thermal_maximal_runs_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
         )
 
         # Plot the thermal fitness with all points on the Pareto front.
-        plt.figure(figsize=(48 / 5, 32 / 5))
+        plt.figure(figsize=(180 * MM, 120 * MM))
 
         sns.scatterplot(
             runs_data[
@@ -2013,14 +2067,14 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_thermal_on_pareto_{variable.replace('/', '_')}.pdf",
+            f"optimum_thermal_on_pareto_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
         )
 
         # Plot the thermal fitness with all points on the Pareto front.
-        plt.figure(figsize=(48 / 5, 32 / 5))
+        plt.figure(figsize=(180 * MM, 120 * MM))
 
         sns.scatterplot(
             runs_data[
@@ -2078,7 +2132,7 @@ def plot_pareto_front(
             transparent=True,
         )
         plt.savefig(
-            f"optimum_thermal_on_pareto_with_optimal_{variable.replace('/', '_')}.pdf",
+            f"optimum_thermal_on_pareto_with_optimal_{variable.replace('/', '_')}_{INDEX}.pdf",
             format="pdf",
             bbox_inches="tight",
             pad_inches=0,
