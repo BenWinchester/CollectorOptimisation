@@ -42,6 +42,11 @@ from tqdm import tqdm
 
 from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
 
+# AMBIENT:
+#   Keyword used to parse when a stead-state run specifies that the ambient temperature
+# should be used.
+AMBIENT: str = "AMBIENT"
+
 # CHANGE_DIR_LOCK:
 #   Lock used to change directory.
 CHANGE_DIR_LOCK: threading.Lock = threading.Lock()
@@ -50,6 +55,11 @@ CHANGE_DIR_LOCK: threading.Lock = threading.Lock()
 #   Lock used to lock the file for storing information based on runs and fitness
 # information.
 FILE_LOCK: threading.Lock = threading.Lock()
+
+# HALF_WAY:
+#   Keyword used to parse when a stead-state run specifies that a temperature half-way
+# (i.e., the mean) between the ambient temperature and the max value should be used.
+HALF_WAY: str = "HALF_WAY"
 
 # HUANG_ET_AL_DIRECTORY
 #   Directory name for the Huang _et al._ model.
@@ -332,6 +342,10 @@ def temporary_collector_file(
         CSV = "csv"
         JSON = "json"
 
+    if temp_upper_dirname is not None:
+        if not isinstance(temp_upper_dirname, str):
+            temp_upper_dirname = str(temp_upper_dirname)
+
     # Open the data and parse the data.
     CHANGE_DIR_LOCK.acquire()
     with open(base_collector_filepath, "r", encoding="UTF-8") as collector_file:
@@ -463,8 +477,39 @@ def temporary_steady_state_file(
 
     CHANGE_DIR_LOCK.release()
 
+    # Drop all nan's from the data
+    solar_irradiance_data = solar_irradiance_data.dropna()
+    temperature_data = temperature_data.dropna()
+    wind_speed_data = wind_speed_data.dropna()
+
     # Assert that all input data is of the same length.
     assert len(solar_irradiance_data) == len(temperature_data) == len(wind_speed_data)
+
+    # Compute input temperatures on the fly based on the ambient temperature.
+    base_collector_input_temperatures: list[float | str] = [
+        entry["collector_input_temperature"] for entry in base_steady_state_data
+    ]
+    max_input_temperature: float = max(
+        [
+            entry
+            for entry in base_collector_input_temperatures
+            if isinstance(entry, float | int)
+        ]
+    )
+
+    # Loop through the ambient temperature data and update the collector input temperatures
+    collector_input_temperatures: list[float] = []
+    for ambient_temperature in temperature_data:
+        for entry in base_collector_input_temperatures:
+            if not isinstance(entry, str):
+                collector_input_temperatures.append(entry)
+                continue
+            if entry == AMBIENT:
+                collector_input_temperatures.append(ambient_temperature)
+            if entry == HALF_WAY:
+                collector_input_temperatures.append(
+                    (max_input_temperature + ambient_temperature) / 2
+                )
 
     # Generate a dataframe to contain the information.
     data_frame = pd.DataFrame(
@@ -481,10 +526,7 @@ def temporary_steady_state_file(
             "mass_flow_rate": [mass_flow_rate]
             * len(wind_speed_data)
             * len(base_steady_state_data),
-            "collector_input_temperature": [
-                entry["collector_input_temperature"] for entry in base_steady_state_data
-            ]
-            * len(wind_speed_data),
+            "collector_input_temperature": collector_input_temperatures,
         }
     )
 
@@ -559,6 +601,10 @@ def temporary_sspvt_steady_state_files(
 
     # Assert that all input data is of the same length.
     assert len(solar_irradiance_data) == len(temperature_data) == len(wind_speed_data)
+
+    if temp_upper_dirname is not None:
+        if not isinstance(temp_upper_dirname, str):
+            temp_upper_dirname = str(temp_upper_dirname)
 
     # Determine the length of the input files required.
     CHANGE_DIR_LOCK.acquire()
@@ -1051,7 +1097,7 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         # Make temporary files as needed based on the inputs for the run.
         with temporary_collector_file(
-            self.base_pvt_filepath, self.date_and_time, kwargs, run_number
+            self.base_pvt_filepath, self.date_and_time, kwargs, unique_id=run_number
         ) as temp_collector_information:
             (
                 temp_pvt_filepath,
@@ -1079,11 +1125,11 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
 
         # Use the run weights for each of the runs that were returned.
         electrical_fitness = (
-            np.sum(entry.electrical_power for entry in output_data.values())
+            np.sum([entry.electrical_power for entry in output_data.values()])
             * segment_to_collector_scaling_factor
         )
         thermal_fitness = np.sum(
-            entry.thermal_power for entry in output_data.values()
+            [entry.thermal_power for entry in output_data.values()]
         ) * int(segment_to_collector_scaling_factor)
 
         # Return these fitnesses.

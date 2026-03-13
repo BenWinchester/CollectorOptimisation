@@ -16,6 +16,7 @@ The main module is responsible for providing the entry point for the code.
 import argparse
 import collections
 import enum
+import itertools
 import math
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -124,9 +125,9 @@ WIND_FILENAME: str = "ninja_wind_{lat:.4f}_{lon:.4f}_corrected.csv"
 # Seaborn setup
 
 # Plotting context
-rc("font", **{"family": "sans-serif", "sans-serif": ["Arial"], "size": 5})
+rc("font", **{"family": "sans-serif", "sans-serif": ["Arial"], "size": 7})
 sns.set_context(
-    "notebook", rc={"font.size": 5, "axes.titlesize": 5, "axes.labelsize": 5}
+    "notebook", rc={"font.size": 7, "axes.titlesize": 7, "axes.labelsize": 7}
 )
 sns.set_style("ticks")
 
@@ -138,7 +139,7 @@ plt.rcParams["ps.fonttype"] = 42
 rcParams["pdf.fonttype"] = 42
 rcParams["ps.fonttype"] = 42
 
-plt.rcParams["font.size"] = 5
+plt.rcParams["font.size"] = 7
 
 
 TOTEX_HEADER: str = "Other TOTEX"
@@ -1518,9 +1519,10 @@ def plot_pareto_front(
 
         return StopIteration()
 
-    fig, axes = plt.subplots(3, 3, figsize=(180 * MM, 180 * MM))
-    fig.subplots_adjust(hspace=0.55, wspace=0.45)
+    fig, axes = plt.subplots(3, 3, figsize=(150 * MM, 150 * MM))
+    fig.subplots_adjust(hspace=0.50, wspace=0.30)
 
+    sns.set_context("notebook")
     sns.set_palette(un_color_palette)
     subplots_labels = subplots_label()
 
@@ -1605,14 +1607,21 @@ def plot_pareto_front(
         axis.set_ylim(0, 1)
         axis.set_xlabel(None)
         axis.set_ylabel(None)
+        axis.set_xticklabels(axis.get_xticklabels(), fontdict={"size": 7})
+        axis.set_yticklabels(axis.get_yticklabels(), fontdict={"size": 7})
         axis.set_title(
             rf"w$_\mathrm{{th}}$={thermal_weightings[run_number]:.0f}, w$_\mathrm{{el}}$={electrical_weightings[run_number]:.0f}",
             fontweight="bold",
+            fontsize=7,
         )
         axis.text(-0.25, 1.1125, next(subplots_labels), fontsize=7, fontweight="bold")
 
     axes[2, 1].set_visible(False)
     axes[2, 2].set_visible(False)
+
+    for axis in axes.flatten():
+        axis.set_xticklabels(axis.get_xticklabels(), fontdict={"size": 7})
+        axis.set_yticklabels(axis.get_yticklabels(), fontdict={"size": 7})
 
     fig.text(
         0.5,
@@ -1631,12 +1640,12 @@ def plot_pareto_front(
         rotation="vertical",
         fontsize=7,
     )
-    fig.legend(
-        [line],
-        ["Optimisation front(s)"],
-        loc="lower right",
-        fontsize=7,
-    )
+    # fig.legend(
+    #     [line],
+    #     ["Optimisation front(s)"],
+    #     loc="lower right",
+    #     fontsize=7,
+    # )
 
     plt.savefig(
         f"pareto_subplots_{date_and_time.date}_{date_and_time.time}.png",
@@ -2225,22 +2234,7 @@ def main(unparsed_args: list[Any]) -> None:
     for suffix in range(len(collector_model_assessors)):
         SSPVT_SUFFIX_QUEUE.put(suffix)
 
-    bayesian_assessor_7 = BayesianPVTModelOptimiserSeries(
-        date_and_time,
-        optimisation_parameters,
-        collector_model_assessors[7],
-        (collector_model_index_to_results_map := {}),
-        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=(_initial_points := 10),
-        num_iterations=(_num_iterations := 4),
-        run_id=7,
-    )
-    bayesian_assessor_7.run()
-
-    # # Run the Bayesian optimiser threads
-    # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
+    # bayesian_assessor_7 = BayesianPVTModelOptimiserSeries(
     #     date_and_time,
     #     optimisation_parameters,
     #     collector_model_assessors[7],
@@ -2248,6 +2242,21 @@ def main(unparsed_args: list[Any]) -> None:
     #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
     #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
     #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+    #     initial_points=(_initial_points := 10),
+    #     num_iterations=(_num_iterations := 4),
+    #     run_id=7,
+    # )
+    # bayesian_assessor_7.run()
+
+    # # Run the Bayesian optimiser threads
+    # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
+    #     date_and_time,
+    #     optimisation_parameters,
+    #     collector_model_assessors[0],
+    #     (collector_model_index_to_results_map := {}),
+    #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value][:2],
+    #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value][:2],
+    #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value][:2],
     #     initial_points=(_initial_points := 10),
     #     num_iterations=(_num_iterations := 4),
     #     run_id=0,
@@ -2299,7 +2308,7 @@ def main(unparsed_args: list[Any]) -> None:
     # Setup the Bayesian optimiser threads.
     bayesian_assessors: list[BayesianPVTModelOptimiserThread] = []
     collector_model_index_to_results_map: dict[str, dict[str, float] | float] = {}
-    for index, collector_model_assessor in enumerate(collector_model_assessors[7:8]):
+    for index, collector_model_assessor in enumerate(collector_model_assessors):
         # if collector_model_assessor.collector_type == CollectorType.PVT:
         bayesian_assessors.append(
             bayesian_assessor := BayesianPVTModelOptimiserThread(
