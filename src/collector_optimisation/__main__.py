@@ -1328,7 +1328,12 @@ def plot_pareto_front(
                 for index in set(runs_data["run_number"])
             }
         ).transpose()
-        maximal_runs["run_number"] = maximal_runs["run_number"].astype(int)
+        try:
+            maximal_runs["run_number"] = maximal_runs["run_number"].astype(int)
+        except KeyError:
+            raise KeyError(
+                "No maximal positive runs found: either run for longer or check inputs."
+            ) from None
 
     sns.scatterplot(
         maximal_runs,
