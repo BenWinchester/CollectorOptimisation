@@ -423,6 +423,19 @@ def _parse_args(args: list[Any]) -> argparse.Namespace:
         help="The time to use when loading resiult for plotting.",
     )
 
+    hpc_only_args = parser.add_argument_group(
+        "HPC-only arguments",
+        "Parameters that should only be used internally when calling the `scdo` "
+        "package on Imperial's HPC.",
+    )
+    hpc_only_args.add_argument(
+        "--hpc-run-number",
+        "-hpc",
+        type=int,
+        default=None,
+        help="Run number used within an HPC array job.",
+    )
+
     return parser.parse_args(args)
 
 
@@ -435,7 +448,7 @@ def _parse_files(
     *,
     resample: bool = False,
     sample_type: SampleType = SampleType.DENSITY,
-    weather_sample_filename: str,
+    weather_sample_filename: str = WEATHER_SAMPLE_FILENAME,
     weather_sample_size: int = 40,
 ) -> tuple[list[CollectorModelAssessor], pd.DataFrame, pd.DataFrame]:
     """
@@ -542,7 +555,7 @@ def _parse_files(
 
     # Sample the weather data if requested or required
     weather_sample_filepath = _add_csv(
-        os.path.join(INPUT_FILES_DIRECTORY, WEATHER_DIRECTORY, WEATHER_SAMPLE_FILENAME)
+        os.path.join(INPUT_FILES_DIRECTORY, WEATHER_DIRECTORY, weather_sample_filename)
     )
 
     if resample or not os.path.isfile(weather_sample_filepath):
@@ -1467,6 +1480,10 @@ def plot_pareto_front(
 
     plt.show()
 
+    import pdb
+
+    pdb.set_trace()
+
     def _generate_tangent_points(
         point: tuple[float, float],
         gradient: float,
@@ -2231,22 +2248,29 @@ def main(unparsed_args: list[Any]) -> None:
 
         return
 
+    # If running on the HPC, then run just the current model assessor.
+    if parsed_args.hpc_run_number is not None:
+        bayesian_assessor_hpc = BayesianPVTModelOptimiserSeries(
+            date_and_time,
+            optimisation_parameters,
+            collector_model_assessors[
+                hpc_run_number := (parsed_args.hpc_run_number - 1)
+            ],
+            (collector_model_index_to_results_map := {}),
+            weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+            weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+            weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+            initial_points=parsed_args.initial_points,
+            num_iterations=parsed_args.num_iterations,
+            run_id=hpc_run_number,
+        )
+        bayesian_assessor_hpc.run()
+
+        # When the run is finished; exit the script.
+        return
+
     for suffix in range(len(collector_model_assessors)):
         SSPVT_SUFFIX_QUEUE.put(suffix)
-
-    # bayesian_assessor_7 = BayesianPVTModelOptimiserSeries(
-    #     date_and_time,
-    #     optimisation_parameters,
-    #     collector_model_assessors[7],
-    #     (collector_model_index_to_results_map := {}),
-    #     weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-    #     weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-    #     weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-    #     initial_points=(_initial_points := 10),
-    #     num_iterations=(_num_iterations := 4),
-    #     run_id=7,
-    # )
-    # bayesian_assessor_7.run()
 
     # # Run the Bayesian optimiser threads
     # bayesian_assessor_0 = BayesianPVTModelOptimiserSeries(
