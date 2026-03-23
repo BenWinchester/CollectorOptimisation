@@ -17,6 +17,7 @@ results of the more complex models underneath.
 
 import abc
 import enum
+import filelock
 import itertools
 import json
 import os
@@ -25,7 +26,6 @@ import random
 import shutil
 import subprocess
 import sys
-import threading
 import time
 
 from contextlib import contextmanager
@@ -49,12 +49,12 @@ AMBIENT: str = "AMBIENT"
 
 # CHANGE_DIR_LOCK:
 #   Lock used to change directory.
-CHANGE_DIR_LOCK: threading.Lock = threading.Lock()
+CHANGE_DIR_LOCK: filelock.FileLock = filelock.FileLock("change_dir.lock")
 
 # FILE_LOCK:
 #   Lock used to lock the file for storing information based on runs and fitness
 # information.
-FILE_LOCK: threading.Lock = threading.Lock()
+FILE_LOCK: filelock.FileLock = filelock.FileLock("file.lock")
 
 # HALF_WAY:
 #   Keyword used to parse when a stead-state run specifies that a temperature half-way

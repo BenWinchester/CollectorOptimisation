@@ -15,9 +15,9 @@ take place.
 
 """
 
+import filelock
 import functools
 import os
-import threading
 
 import pandas as pd
 
@@ -40,7 +40,7 @@ MAX_RESULTS_FILENAME: str = "max_runs_data_{date}_{time}.csv"
 # OPTIMUM_FILE_LOCK:
 #   Lock used to lock the file for storing information based on runs and fitness
 # information.
-OPTIMUM_FILE_LOCK: threading.Lock = threading.Lock()
+OPTIMUM_FILE_LOCK: filelock.FileLock = filelock.FileLock("optimum_file.lock")
 
 
 def _save_max_results(*, date_and_time: DateAndTime, **kwargs) -> None:
