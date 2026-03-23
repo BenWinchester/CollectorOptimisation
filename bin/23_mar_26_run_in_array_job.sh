@@ -21,7 +21,7 @@ CURRENT_DIR=$(pwd)
 cd $PBS_O_WORKDIR
 
 python -m src.collector_optimisation -l imperial_chemical_engineering -i 64 -n 256 \
-    -wf weather_data_sample.csv -bc autotherm.yaml -bmfs autotherm.yaml \
-    -d 23/03/26 -t 09:00:00 -hpc $PBS_ARRAY_INDEX
+    -wf weather_data_25_1000.csv -bc autotherm.yaml -bmfs autotherm.yaml \
+    -d 23/03/26 -t 13:00:00 -hpc $PBS_ARRAY_INDEX
 
 echo "Completed. Exiting."

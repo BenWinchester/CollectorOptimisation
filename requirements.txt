@@ -1,4 +1,6 @@
 bayesian-optimization>=1.5.1
 fast-pareto>=1.0.4
+filelock>=3.25.2
 heatpanel>=1.1.4
 seaborn>=0.13.2
+
