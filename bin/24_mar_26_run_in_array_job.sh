@@ -22,6 +22,6 @@ cd $PBS_O_WORKDIR
 
 python -m src.collector_optimisation -l imperial_chemical_engineering -i 64 -n 8128 \
     -wf weather_data_25_1000.csv -bc autotherm.yaml -bmfs autotherm.yaml \
-    -d 24/03/26 -t 10:00:00 -hpc $PBS_ARRAY_INDEX
+    -d 24/03/26 -t 11:00:00 -hpc $PBS_ARRAY_INDEX
 
 echo "Completed. Exiting."
