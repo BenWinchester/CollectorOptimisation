@@ -17,11 +17,28 @@ import datetime
 import enum
 
 __all__ = (
+    "AMBIENT",
+    "COLLECTOR_INPUT_TEMPERATURE",
     "DateAndTime",
+    "HALF_WAY",
     "INPUT_FILES_DIRECTORY",
     "WeatherDataHeader",
 )
 
+
+# AMBIENT:
+#   Keyword used to parse when a stead-state run specifies that the ambient temperature
+# should be used.
+AMBIENT: str = "AMBIENT"
+
+# COLLECTOR_INPUT_TEMPERATURE:
+#   Keyword used for parsing the collector input-temperature information.
+COLLECTOR_INPUT_TEMPERATURE: str = "collector_input_temperature"
+
+# HALF_WAY:
+#   Keyword used to parse when a stead-state run specifies that a temperature half-way
+# (i.e., the mean) between the ambient temperature and the max value should be used.
+HALF_WAY: str = "HALF_WAY"
 
 # INPUT_FILES_DIRECTORY:
 #   The name of the input-files directory.

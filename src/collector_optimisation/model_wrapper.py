@@ -38,14 +38,17 @@ import yaml
 
 from pvt_model import main as pvt_model_main
 from pvt_model import SystemData
-from tqdm import tqdm
 
-from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
+# from tqdm import tqdm
 
-# AMBIENT:
-#   Keyword used to parse when a stead-state run specifies that the ambient temperature
-# should be used.
-AMBIENT: str = "AMBIENT"
+from .__utils__ import (
+    AMBIENT,
+    COLLECTOR_INPUT_TEMPERATURE,
+    HALF_WAY,
+    DateAndTime,
+    INPUT_FILES_DIRECTORY,
+    WeatherDataHeader,
+)
 
 # CHANGE_DIR_LOCK:
 #   Lock used to change directory.
@@ -55,11 +58,6 @@ CHANGE_DIR_LOCK: filelock.FileLock = filelock.FileLock("change_dir.lock")
 #   Lock used to lock the file for storing information based on runs and fitness
 # information.
 FILE_LOCK: filelock.FileLock = filelock.FileLock("file.lock")
-
-# HALF_WAY:
-#   Keyword used to parse when a stead-state run specifies that a temperature half-way
-# (i.e., the mean) between the ambient temperature and the max value should be used.
-HALF_WAY: str = "HALF_WAY"
 
 # HUANG_ET_AL_DIRECTORY
 #   Directory name for the Huang _et al._ model.
@@ -487,7 +485,7 @@ def temporary_steady_state_file(
 
     # Compute input temperatures on the fly based on the ambient temperature.
     base_collector_input_temperatures: list[float | str] = [
-        entry["collector_input_temperature"] for entry in base_steady_state_data
+        entry[COLLECTOR_INPUT_TEMPERATURE] for entry in base_steady_state_data
     ]
     max_input_temperature: float = max(
         [
@@ -526,7 +524,7 @@ def temporary_steady_state_file(
             "mass_flow_rate": [mass_flow_rate]
             * len(wind_speed_data)
             * len(base_steady_state_data),
-            "collector_input_temperature": collector_input_temperatures,
+            COLLECTOR_INPUT_TEMPERATURE: collector_input_temperatures,
         }
     )
 

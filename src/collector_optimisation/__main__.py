@@ -38,10 +38,17 @@ import seaborn as sns
 import yaml
 
 from fast_pareto import is_pareto_front
+from rich.progress import track
 from sklearn.neighbors import KernelDensity
-from tqdm import tqdm
 
-from .__utils__ import DateAndTime, INPUT_FILES_DIRECTORY, WeatherDataHeader
+from .__utils__ import (
+    AMBIENT,
+    COLLECTOR_INPUT_TEMPERATURE,
+    DateAndTime,
+    HALF_WAY,
+    INPUT_FILES_DIRECTORY,
+    WeatherDataHeader,
+)
 from .bayesian_optimiser import (
     BayesianPVTModelOptimiserSeries,
     BayesianPVTModelOptimiserThread,
@@ -57,6 +64,10 @@ from .model_wrapper import (
 )
 
 
+# AREA:
+#   Keyword for the collector area.
+AREA: str = "area"
+
 # AUTO_GENERATED:
 #   The name to use for the auto-generated files directory.
 AUTO_GENERATED: str = "auto_generated"
@@ -64,6 +75,10 @@ AUTO_GENERATED: str = "auto_generated"
 # COLLECTOR_FILES_DIRECTORY:
 #   The name of the directory containing base collector files.
 COLLECTOR_FILES_DIRECTORY: str = "collector_designs"
+
+# Heat capacity of water:
+#   The heat capacity of water, measured in Joules per kilogram Kelvin.
+HEAT_CAPACITY_OF_WATER: int = 4182
 
 # INDEX:
 #   Index used for plotting.
@@ -80,7 +95,6 @@ MODEL_INPUTS_DIRECTORY: str = "steady_state_data"
 # MM:
 #   The size of a mm, in inches.
 MM: float = 1 / 25.4
-
 
 # OPTIMISATION_INPUTS_FILE
 #   The name of the optimisations inputs file.
@@ -102,9 +116,21 @@ PARAMETER_PRECISION_MAP: dict[str, float] = {
 #    The filename for the Pareto front.
 PARETO_FRONT_FILENAME: str = "pareto_front.yaml"
 
+# REFERENCE_ELECTRICAL_EFFICIENCY:
+#   Keyword for parsing the reference electrical efficiency..
+REFERENCE_ELECTRICAL_EFFICIENCY: str = "eta_el"
+
+# REFERENCE_PV_TEMPERATURE:
+#   Reference temperature for measuring PV performance.
+REFERENCE_PV_TEMPERATURE: float = 25.0
+
 # SOLAR_FILENAME:
 #   The name of the solar filename.
 SOLAR_FILENAME: str = "ninja_pv_{lat:.4f}_{lon:.4f}_uncorrected.csv"
+
+# THERMAL_COEFFICIENT:
+#   Keyword for parsing the thermal coefficient.
+THERMAL_COEFFICIENT: str = "beta_pv"
 
 # THERMODYNAMIC_LIMIT:
 #   A thermodynamic limit on efficiency placed on solar-thermal collectors.
@@ -207,6 +233,128 @@ class Location:
             and self.latitude == other.latitude
             and self.longitude == other.longitude
         )
+
+
+@dataclass
+class PerformanceCurve:
+    """
+    Represents a performance curve for a solar-thermal collector.
+
+    Solar-thermal collectors can be characterised by a performance curve,
+
+        eta = eta_0 + c_1 * (T_c - T_a) / G + c_2 * (T_c - T_a)^2 / G,
+
+    where `eta_0`, `c_1` and `c_2` give the zeroth-, first- and second-order
+    coefficients which characterise the performance of the collector, `T_c` is the
+    average temperature of the collector and `T_a` the ambient temperature, both
+    measured in either degrees Kelvin or Celsius, but the same unit for each, and `G` is
+    the solar irradiance, measured in Watts per meter squared.
+
+    The attributes, `eta_0`, `c_1` and `c_2` are inherent properties of the collector
+    and are contained within this class.
+
+    .. attribute:: zeroth_order_cefficient
+        The zeroth-order term for the performance curve.
+
+    .. attribute:: first_order_cefficient
+        The zeroth-order term for the performance curve.
+
+    .. attribute:: second_order_cefficient
+        The zeroth-order term for the performance curve.
+
+    """
+
+    zeroth_order_coefficient: float
+    first_order_coefficient: float
+    second_order_coefficient: float
+
+    def __repr__(self) -> str:
+        """
+        The default representation for the class.
+        """
+
+        return str(self)
+
+    def __str__(self) -> str:
+        """Return a `str` representing the curve."""
+
+        return f"PerformanceCurve(eta_0={self.eta_0}, c_1={self.c_1}, c_2={self.c_2})"
+
+    @property
+    def as_dict(self) -> dict[str, float]:
+        """
+        Return the representation of the :class:`PerformanceCurve` instance as a `dict`.
+
+        Outputs:
+            A `dict` representing the class.
+
+        """
+
+        return {
+            "eta_0": self.zeroth_order_coefficient,
+            "alpha_1": self.first_order_coefficient,
+            "alpha_2": self.second_order_coefficient,
+        }
+
+    @property
+    def eta_0(self) -> float:
+        """
+        Wrapper around the zeroth-order coefficient.
+
+        Outputs:
+            - The zeroth-order coefficient.
+
+        """
+
+        return float(self.zeroth_order_coefficient)
+
+    @property
+    def alpha_1(self) -> float:
+        """
+        Wrapper around the first-order coefficient.
+
+        Outputs:
+            - The first-order coefficient.
+
+        """
+
+        return float(self.first_order_coefficient)
+
+    @property
+    def c_1(self) -> float:
+        """
+        Wrapper around the first-order coefficient.
+
+        Outputs:
+            - The first-order coefficient.
+
+        """
+
+        return float(self.first_order_coefficient)
+
+    @property
+    def alpha_2(self) -> float:
+        """
+        Wrapper around the second-order coefficient.
+
+        Outputs:
+            - The second-order coefficient.
+
+        """
+
+        return float(self.second_order_coefficient)
+
+    @property
+    def c_2(self) -> float:
+        """
+        Wrapper around the second-order coefficient.
+
+        Outputs:
+            - The second-order coefficient.
+
+        """
+
+        return float(self.second_order_coefficient)
 
 
 class SampleType(enum.Enum):
@@ -1061,6 +1209,152 @@ def _parse_files(
     return collector_model_assessors, optimisation_parameters, weather_sample, weather
 
 
+def _output_temperature(
+    ambient_temperature: float,
+    area: float,
+    htf_heat_capacity: float | None,
+    input_temperature: float,
+    mass_flow_rate: float,
+    performance_curve: PerformanceCurve,
+    solar_irradiance: float,
+) -> tuple[float | None, float]:
+    """
+    Calculates the roots for the thermal performance of the collectors.
+
+    Each collector has a characteristic performance curve, which is related to the
+    efficiency of the collector by a simple equation:
+
+        eta = eta_0
+            + c_1 * (T_c - T_amb) / G
+            + c_2 * (T_c - T_amb) ** 2 / G
+
+    where `eta_0`, `c_1` and `c_2` give the zeroth-, first- and second-order
+    coefficients which characterise the performance of the collector, `T_c` is the
+    average temperature of the collector and `T_a` the ambient temperature, both
+    measured in either degrees Kelvin or Celsius, but the same unit for each, and
+    `G` is the solar irradiance, measured in Watts per meter squared. The attributes
+    `eta_0`, `c_1` and `c_2` are inherent properties of the collector and are
+    contained within the `performance_curve` attribute.
+
+    This equation can be rearranged by expressing the efficiency as the energy
+    gained by the heat-transfer fluid within the collector as a fraction of the
+    total energy incident on the collector:
+
+        eta = m_htf * c_htf * (T_out - T_in) / (A * G)
+
+    where `T_out` and `T_in` give the output and input HTF temperatures
+    respectively, and `m_htf` and `c_htf` give the mass-flow rate and specific heat
+    capacityof the HTF through the collector. Combining these two yields
+
+        0 = 4 * eta_0 * A * G                   \\ = c = zeroth_order_coefficient
+            + 4 * m_htf * c_htf * T_in            |
+            + 2 * c_1 * A * (T_in - T_amb)        |
+            + c_2 * A * (T_in - T_amb) ** 2       /
+            + (                                   \\ = b = first_order_coefficient
+            - 4 * m_htf * c_htf                 |
+            + 2 * c_1 * A                       |
+            + 2 * c_2 * A * (T_in - T_amb)      /
+            ) * T_out
+            + (                                   \\ = a = second_order_coefficient
+            4 * eta_0 * A * G                   |
+            + 4 * m_htf * c_htf * T_in          |
+            + 2 * c_1 * A * (T_in - T_amb)      |
+            + c_2 * A * (T_in - T_amb) ** 2     /
+            ) * T_out ** 2
+
+    which can then be solved quadratically to determine the output temperature of
+    HTF leaving the collector.
+
+    :param ambient_temperature:
+        The ambient temperature, measured in degrees Kelvin.
+    :param area:
+        The area of the collector, in meters squared.
+    :param htf_heat_capacity:
+        The heat capacity of the HTF entering the collector, measured in Joules per
+        kilogram Kelvin (J/kgK).
+    :param input_temperature:
+        The input temperature of the HTF entering the collector, measured in in degrees
+        Kelvin.
+    :param mass_flow_rate:
+        The mass-flow rate of HTF passing through the collector, measured in kilograms
+        per second.
+    :param performance_curve:
+        The performance curve for the collector.
+    :param solar_irradiance:
+        The solar irradiance incident on the surface of the collector, measured in Watts
+        per meter squared.
+
+    :returns:
+        - positive_root:
+            The positive root taken from solving the quadratic equation, measured in
+            Kelvin.
+        - negative_root:
+            The negative root taken from solving the quadratic equation, measured in
+            Kelvin.
+
+    """
+
+    # Sanitise the HTF heat capacity
+    htf_heat_capacity = float(
+        htf_heat_capacity if htf_heat_capacity is not None else HEAT_CAPACITY_OF_WATER
+    )
+
+    # If noly a linear calculation is required, solve linearly.
+    if performance_curve.c_2 == 0:
+        return (
+            None,
+            (
+                2 * performance_curve.eta_0 * area * solar_irradiance
+                + 2 * mass_flow_rate * htf_heat_capacity * input_temperature
+                + performance_curve.c_1
+                * area
+                * (input_temperature - 2 * ambient_temperature)
+            )
+            / (2 * mass_flow_rate * htf_heat_capacity - performance_curve.c_1 * area),
+        )
+
+    # Compute the various terms of the equation
+    a: float = performance_curve.c_2 * area  # pylint: disable=invalid-name
+
+    b: float = (  # pylint: disable=invalid-name
+        2 * performance_curve.c_1 * area
+        + 2
+        * performance_curve.c_2
+        * area
+        * (input_temperature - 2 * ambient_temperature)
+        - 4 * mass_flow_rate * htf_heat_capacity
+    )
+
+    c: float = (  # pylint: disable=invalid-name
+        4 * performance_curve.eta_0 * area * solar_irradiance
+        + 4 * mass_flow_rate * htf_heat_capacity * input_temperature
+        + 2
+        * performance_curve.c_1
+        * area
+        * (input_temperature - 2 * ambient_temperature)
+        + performance_curve.c_2
+        * area
+        * (input_temperature - 2 * ambient_temperature) ** 2
+    )
+
+    # Use numpy or Pandas to solve the quadratic to determine the performance of
+    # the collector
+    try:
+        positive_root: float = (  # pylint: disable=unused-variable
+            -b + math.sqrt(descriminant := (b**2 - 4 * a * c))
+        ) / (2 * a)
+    except ValueError:
+        raise ValueError(
+            "math domain error: a: {:2f}, b: {:2f}, c: {:2f}, Δ: {:2f}".format(
+                a, b, c, (descriminant := (b**2 - 4 * a * c))
+            )
+        ) from None
+
+    negative_root: float = float((-b - math.sqrt(descriminant)) / (2 * a))
+
+    return positive_root, negative_root
+
+
 def _validate_args(parsed_args: argparse.Namespace) -> tuple[str, list[str]]:
     """
     Raises errors if the parsed args aren't valid arguments.
@@ -1123,6 +1417,7 @@ def plot_pareto_front(
     optimisation_parameters: dict[Any, tuple[Any, Any]],
     weather_data_sample: pd.DataFrame,
     *,
+    base_model_input_filepaths: list[str],
     electrical_weightings: dict[int, float] | None = None,
     num_repeats: int = 1,
     reference_collector_runs: pd.DataFrame,
@@ -1139,6 +1434,9 @@ def plot_pareto_front(
 
     :param: werather_data_sample
         The weather-data sample to use.
+
+    :param: base_model_input_filepaths
+        The base model input filepaths; namely, the steady-state data.
 
     :param: electrical_weightings
         The electrical weightings to use, as a `dict` instance.
@@ -1231,7 +1529,10 @@ def plot_pareto_front(
     # average_solar_irradiance = cumulative_solar_irradiance / len(weather_data_sample)
     max_collector_size = 1.4276
     # max_collector_width = optimisation_parameters["pvt_collector/width"][1]
-    max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
+
+    # NOTE: This value can be tuned to adjust what is meant by normalisation.
+    # max_electrical_efficiency = optimisation_parameters["pv/reference_efficiency"][1]
+    max_electrical_efficiency = 1.0
 
     energy_input = cumulative_solar_irradiance * num_repeats * max_collector_size
     runs_data["normalised_electrical_fitness"] = runs_data["electrical_fitness"] / (
@@ -1301,7 +1602,7 @@ def plot_pareto_front(
         palette=un_color_palette,
         marker="h",
         s=200,
-        alpha=0.15,
+        alpha=0.05,
         linewidth=0,
         legend=False,
     )
@@ -1393,13 +1694,151 @@ def plot_pareto_front(
         marker="P",
     )
 
-    if os.path.isfile((herrando_filename := "herrando_data.csv")):
+    # If the reference data exist, open them and compute performance over the weather
+    # data.
+    if os.path.isfile((herrando_filename := "herrando_collector_data.csv")):
         with open(herrando_filename, "r", encoding="UTF-8") as herrando_file:
-            herrando_data = pd.read_csv(herrando_file)
+            herrando_collector_data = pd.read_csv(herrando_file)
+
+        # Combine the weather data with the base input data for the input temperatures.
+        with open(
+            steady_state_data_path := base_model_input_filepaths[0],
+            "r",
+            encoding="UTF-8",
+        ) as steady_state_file:
+            steady_state_data = yaml.safe_load(steady_state_file)
+
+        collector_input_temperatures: list[float] = []
+        base_collector_input_temperatures = [
+            sub_entry[COLLECTOR_INPUT_TEMPERATURE] for sub_entry in steady_state_data
+        ]
+        max_input_temperature: float = max(
+            [
+                entry
+                for entry in base_collector_input_temperatures
+                if isinstance(entry, float | int)
+            ]
+        )
+        for ambient_temperature in weather_data_sample[
+            WeatherDataHeader.AMBIENT_TEMPERATURE.value
+        ]:
+            for entry in base_collector_input_temperatures:
+                if not isinstance(entry, str):
+                    collector_input_temperatures.append(entry)
+                    continue
+                if entry == AMBIENT:
+                    collector_input_temperatures.append(ambient_temperature)
+                if entry == HALF_WAY:
+                    collector_input_temperatures.append(
+                        (max_input_temperature + ambient_temperature) / 2
+                    )
+
+        weather_and_input_frame = pd.merge(
+            weather_data_sample,
+            pd.DataFrame({COLLECTOR_INPUT_TEMPERATURE: collector_input_temperatures}),
+            how="cross",
+        )
+
+        # Compute the collector thermal performance.
+        output_temperatures = {
+            collector_params[collector_name := "Collector_name"]: [
+                _output_temperature(
+                    entry[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+                    collector_params[AREA],
+                    HEAT_CAPACITY_OF_WATER,
+                    entry[COLLECTOR_INPUT_TEMPERATURE],
+                    _mass_flow_rate := 200 / 3600,
+                    PerformanceCurve(
+                        collector_params["eta_0"],
+                        collector_params["alpha_1"],
+                        collector_params["alpha_2"],
+                    ),
+                    entry[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+                )[1]
+                for _, entry in weather_and_input_frame.iterrows()
+            ]
+            for _, collector_params in track(
+                herrando_collector_data.iterrows(),
+                description="Ref. performance computation",
+            )
+        }
+
+        average_temperature = {
+            key: [
+                0.5
+                * (
+                    output_temperatures[key][index]
+                    + weather_row[COLLECTOR_INPUT_TEMPERATURE]
+                )
+                for index, weather_row in weather_and_input_frame.iterrows()
+            ]
+            for key in output_temperatures.keys()
+        }
+        reduced_collector_temperature = {
+            key: [
+                reduced_temperature(
+                    weather_row[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+                    average_temperature[key][index],
+                    weather_row[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+                )
+                for index, weather_row in weather_and_input_frame.iterrows()
+            ]
+            for key in output_temperatures.keys()
+        }
+
+        # Compute the electrical output for each collector based on its average
+        # temperature.
+        electrical_efficiency = {
+            collector_params[collector_name]: [
+                collector_params[REFERENCE_ELECTRICAL_EFFICIENCY]
+                * (
+                    1
+                    + (collector_params[THERMAL_COEFFICIENT] / 100)
+                    * (average_temperature - REFERENCE_PV_TEMPERATURE)
+                )
+                for average_temperature in average_temperature[
+                    collector_params[collector_name]
+                ]
+            ]
+            for _, collector_params in herrando_collector_data.iterrows()
+        }
+        electrical_performance = pd.DataFrame(electrical_efficiency).mul(
+            weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value], axis=0
+        )
+        electrical_sum = electrical_performance.sum(axis=0)
+
+        thermal_performance = (
+            HEAT_CAPACITY_OF_WATER
+            * pd.DataFrame(output_temperatures).subtract(
+                weather_and_input_frame[COLLECTOR_INPUT_TEMPERATURE], axis=0
+            )
+            * _mass_flow_rate
+        )
+        thermal_sum = thermal_performance.sum(axis=0)
+
+        herrando_collector_data.index = herrando_collector_data[collector_name]
+        normalised_electrical_sum = electrical_sum / (
+            herrando_collector_data[AREA]
+            * weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value].sum()
+        )
+        normalised_thermal_sum = thermal_sum / (
+            herrando_collector_data[AREA]
+            * weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value].sum()
+        )
+
+        herrando_collector_performance = pd.concat(
+            [normalised_thermal_sum, normalised_electrical_sum], axis=1
+        )
+        herrando_collector_performance.columns = pd.Index(
+            ["normalised_thermal_output", "normalised_electrical_output"]
+        )
+        herrando_collector_performance[collector_name] = (
+            herrando_collector_performance.index
+        )
 
         # Sanitise the columns and rows
         sns.scatterplot(
-            herrando_data,
+            herrando_collector_performance,
             x="normalised_thermal_output",
             y="normalised_electrical_output",
             s=100,
@@ -1418,7 +1857,7 @@ def plot_pareto_front(
                     "#662506",
                 ]
             ),
-            hue="Collector_name",
+            hue=collector_name,
             marker="D",
             edgecolor="#232323",
         )
@@ -1441,7 +1880,7 @@ def plot_pareto_front(
         fontsize=7,
     )
     plt.xlim(0, 1)
-    plt.ylim(0, 1)
+    plt.ylim(0, 0.25)
 
     (ax1 := plt.gca()).legend(
         handles[:8],
@@ -1699,7 +2138,7 @@ def plot_pareto_front(
         "pvt_collector/width": r"Pipe spacing / m",
     }
 
-    for variable in tqdm(design_variables, desc="Plotting design KDEs", leave=True):
+    for variable in track(design_variables, description="Plotting design KDEs"):
         # Setup a new figure for the KDE analysis front.
         joint_plot_grid = sns.jointplot(
             (kde_frame := pd.concat([pareto_front_frame, maximal_runs])),
@@ -2178,6 +2617,38 @@ def plot_pareto_front(
     return maximal_runs, runs_data
 
 
+def reduced_temperature(
+    ambient_temperature: float, average_temperature: float, solar_irradiance: float
+) -> float | None:
+    """
+    Computes the reduced temperature of the collector.
+
+    NOTE: The ambient temperature and average temperature need to be measured in the
+    same units, whether it's Kelvin or Celcius, but it does not matter which of these
+    two is used.
+
+    :param ambient_temperature:
+        The ambient temperature surrounding the collector.
+    :type ambient_temperature: float
+    :param average_temperature:
+        The average temperature of the collector.
+    :type average_temperature: float
+    :param solar_irradiance:
+        The solar irradiance, measured in Watts per meter squared.
+    :type solar_irradiance: float
+
+    Outputs:
+        The reduced temperature of the collector in Kelvin meter squared per Watt.
+
+    """
+
+    # The reduced temperature cannot be computed when there is no solar irradiance
+    if solar_irradiance == 0:
+        return None
+
+    return (average_temperature - ambient_temperature) / solar_irradiance
+
+
 def main(unparsed_args: list[Any]) -> None:
     """
     The main function for the module.
@@ -2245,6 +2716,7 @@ def main(unparsed_args: list[Any]) -> None:
             date_and_time,
             optimisation_parameters,
             weather_data_sample,
+            base_model_input_filepaths=base_model_input_filepaths,
             electrical_weightings=electrical_weightings,
             num_repeats=num_repeats,
             reference_collector_runs=reference_collector_runs,
