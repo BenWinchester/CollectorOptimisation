@@ -38,16 +38,18 @@ import yaml
 
 from pvt_model import main as pvt_model_main
 from pvt_model import SystemData
-
-# from tqdm import tqdm
+from tqdm import tqdm
 
 from .__utils__ import (
     AMBIENT,
     COLLECTOR_INPUT_TEMPERATURE,
+    density_of_water,
     HALF_WAY,
     DateAndTime,
     INPUT_FILES_DIRECTORY,
+    parasitic_power_loss,
     WeatherDataHeader,
+    ZERO_CELCIUS_OFFSET,
 )
 
 # CHANGE_DIR_LOCK:
@@ -1120,6 +1122,25 @@ class PVTModelAssessor(CollectorModelAssessor, collector_type=CollectorType.PVT)
         segment_to_collector_scaling_factor = (
             initial_pvt_collector_width / temp_pvt_collector_width
         )
+
+        # Extract needed information from the temporary input file.
+        with open(self.base_pvt_filepath, "r", encoding="UTF-8") as base_pvt_file:
+            base_pvt_data = yaml.safe_load(base_pvt_file)
+
+        collector_length: float = base_pvt_data["pvt_collector"]["length"]
+        inner_pipe_diameter: float = base_pvt_data["absorber"]["inner_pipe_diameter"]
+
+        # Subtract the parasitic power losses.
+        for key, entry in output_data.items():
+            entry.electrical_power -= parasitic_power_loss(
+                inner_pipe_diameter,
+                collector_length,
+                _density_of_water := density_of_water(entry.bulk_water_temperature),
+                entry.bulk_water_temperature,
+                mass_flow_rate
+                / (3600 * np.pi * (inner_pipe_diameter / 2) ** 2 * _density_of_water),
+                mass_flow_rate / 3600,
+            )
 
         # Use the run weights for each of the runs that were returned.
         electrical_fitness = (
