@@ -84,9 +84,25 @@ HEAT_CAPACITY_OF_WATER: int = 4182
 #   Index used for plotting.
 INDEX: int = 2
 
+# LENGTH:
+#   Keyword used for parsing the length of the collectors.
+LENGTH: str = "length"
+
 # LOCATIONS_FILENAME:
 #   The name of the file containing the locations information.
 LOCATIONS_FILENAME: str = "locations.yaml"
+
+# MASS_FLOW_RATE:
+#   Keyword for the mass flow rate through the collectors.
+MASS_FLOW_RATE: str = "m_dot"
+
+# MAXIMUM_DIAMETER:
+#   Keyword for parsing the maximum diameter.
+MAXIMUM_DIAMETER: str = "d_max"
+
+# MINIMUM_DIAMETER:
+#   Keyword for parsing the minimum diameter.
+MINIMUM_DIAMETER: str = "d_min"
 
 # MODEL_INPUTS_DIRECTORY:
 #   The directory containing model inputs.
@@ -147,6 +163,11 @@ WEATHER_SAMPLE_FILENAME: str = "weather_data_sample"
 # WIND_FILENAME:
 #   The name of the wind filename.
 WIND_FILENAME: str = "ninja_wind_{lat:.4f}_{lon:.4f}_corrected.csv"
+
+# ZERO_CELCIUS_OFFSET:
+#   The temperature of absolute zero in Kelvin, used for converting Celcius to Kelvin
+# and vice-a-versa.
+ZERO_CELCIUS_OFFSET: float = 273.15
 
 # Seaborn setup
 
@@ -373,6 +394,71 @@ class SampleType(enum.Enum):
     GRID = "grid"
 
 
+def darcy_friction_factor(reynolds_number: float) -> float:
+    """
+    Computes and returns the Darcy friction factor.
+
+    The formula used for the friction factor is obtained from:
+    Inglesais-Manríquez, E., Brottier, L. & Bennacer, R.
+    Pressure Drop in Parallel Flow Flat-Plate PVT Collectors
+    in International Solar Energy Society (ISES) Conference Proceedings (2016).
+
+    :param: reynolds_number:
+        The Reynolds number of the fluid.
+
+    :returns:
+        The Darcy friction factor.
+
+    """
+
+    if reynolds_number <= 2300:
+        return 64 / reynolds_number
+
+    return 0.3164 * (reynolds_number**0.25)
+
+
+def density_of_water(fluid_temperature: float) -> float:
+    """
+    The density of water varies as a function of temperature.
+
+    The formula for the density is obtained from:
+    https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4909168/
+
+    :param fluid_temperature:
+        The temperature of the fluid, measured in Kelvin.
+
+    :return:
+        The density of water, measured in kilograms per meter cubed.
+
+    """
+
+    return (
+        999.85308
+        + 6.32693 * (10 ** (-2)) * (fluid_temperature - ZERO_CELCIUS_OFFSET)
+        - 8.523892 * (10 ** (-3)) * (fluid_temperature - ZERO_CELCIUS_OFFSET) ** 2
+        + 6.943249 * (10 ** (-5)) * (fluid_temperature - ZERO_CELCIUS_OFFSET) ** 3
+        - 3.82126 * (10 ** (-7)) * (fluid_temperature - ZERO_CELCIUS_OFFSET) ** 4
+    )
+
+
+def dynamic_viscosity_of_water(fluid_temperature: float) -> float:
+    """
+    The dynamic viscosity of water varies as a function of temperature.
+
+    The formula comes from the Vogel-Fulcher-Tammann equation via Wiki:
+    https://en.wikipedia.org/wiki/Viscosity#Water
+
+    :param fluid_temperature:
+        The temperature of the fluid being modelled, measured in Kelvin.
+
+    :return:
+        The dynamic viscosity of water, measured in kilograms per meter second.
+
+    """
+
+    return 0.00002939 * math.exp(507.88 / (fluid_temperature - 149.3))
+
+
 def _load_reference_runs(
     base_collector_filename: str,
     base_model_input_files: list[str],
@@ -467,6 +553,178 @@ def _load_reference_runs(
         reference_results_filepath,
     )
     return pd.read_csv(reference_results_filepath, index_col=None)
+
+
+def parasitic_pressure_loss(
+    characteristic_diameter: float,
+    characteristic_length: float,
+    fluid_density: float | None,
+    fluid_temperature: float,
+    fluid_velocity: float,
+) -> float:
+    """
+    Compute the parasitic pressure loss, in W, of the pump.
+
+    The electrical output of the PV-T collectors will be reduced by the reqyurements of
+    the pump needed to move the HTF through the collectors. For an incompressible fluid
+    with a negligible or neglected height difference, this loss comes purely from
+    friction:
+        Δp_loss = f * ρv^2 L / 2D,
+    where:
+        f --- is the Darcy--Weisbach friction coefficient,
+        ρ --- "rho" is the density of the fluid,
+        v --- the velocity of the fluid,
+        L --- a charactieristic length scale,
+    and D --- the diameter of the fluid.
+
+    :param: characteristic_diameter:
+        The characteristic diameter of the pipe.
+
+    :param: characteristic_length:
+        The characteristic length of the collector.
+
+    :param: fluid_desnsity:
+        The density of the fluid
+
+    :param: fluid_temperature:
+        The temperature of the fluid, in Kelvin.
+
+    :param: fluid_velocity:
+        The velocity of the fluid in m/s.
+
+    """
+
+    if isinstance(fluid_temperature, list) and isinstance(fluid_velocity, list):
+        if len(fluid_temperature) != len(fluid_velocity):
+            raise Exception(
+                "Fluid temperature and fluid velocity must have the same length."
+            )
+
+        if fluid_density is None:
+            fluid_density = [
+                density_of_water(entry + ZERO_CELCIUS_OFFSET)
+                for entry in fluid_temperature
+            ]
+
+        return [
+            (
+                fluid_density[index]
+                * darcy_friction_factor(
+                    reynolds_number(
+                        fluid_density[index],
+                        dynamic_viscosity_of_water(
+                            fluid_temperature[index] + ZERO_CELCIUS_OFFSET,
+                        ),
+                        fluid_velocity[index],
+                        characteristic_diameter,
+                    )
+                )
+                * characteristic_length
+                * (fluid_velocity[index] ** 2)
+                / (2 * characteristic_diameter)
+            )
+            for index, _ in enumerate(fluid_temperature)
+        ]
+
+    if isinstance(fluid_temperature, float) and isinstance(fluid_velocity, float):
+        if fluid_density is None:
+            fluid_density = density_of_water(fluid_temperature + ZERO_CELCIUS_OFFSET)
+
+        return (
+            fluid_density
+            * darcy_friction_factor(
+                reynolds_number(
+                    fluid_density,
+                    dynamic_viscosity_of_water(
+                        fluid_temperature + ZERO_CELCIUS_OFFSET,
+                    ),
+                    fluid_velocity,
+                    characteristic_diameter,
+                )
+            )
+            * characteristic_length
+            * (fluid_velocity**2)
+            / (2 * characteristic_diameter)
+        )
+
+    raise Exception("Fluid temperature and fluid velocity must be of the same type.")
+
+
+def parasitic_power_loss(
+    characteristic_diameter: float,
+    characteristic_length: float,
+    fluid_density: float | None,
+    fluid_temperature: float | list[float],
+    fluid_velocity: float | list[float],
+    mass_flow_rate: float,
+) -> float | list[float]:
+    """
+    Compute the parasitic power loss for the collector.
+
+    :param: characteristic_diameter:
+        The characteristic diameter of the pipe.
+
+    :param: characteristic_length:
+        The characteristic length of the collector.
+
+    :param: fluid_desnsity:
+        The density of the fluid
+
+    :param: fluid_temperature:
+        The temperature of the fluid, in Kelvin.
+
+    :param: fluid_velocity:
+        The velocity of the fluid in m/s.
+
+    :param: mass_flow_rate:
+        The mass flow rate, in kg/s, of the fluid.
+
+    """
+
+    if isinstance(fluid_temperature, list) and isinstance(fluid_velocity, list):
+        if len(fluid_temperature) != len(fluid_velocity):
+            raise Exception(
+                "Fluid temperature and fluid velocity must have the same length."
+            )
+
+        if fluid_density is None:
+            fluid_density = [
+                density_of_water(entry + ZERO_CELCIUS_OFFSET)
+                for entry in fluid_temperature
+            ]
+
+        return [
+            (
+                mass_flow_rate
+                * parasitic_pressure_loss(
+                    characteristic_diameter,
+                    characteristic_length,
+                    fluid_density[index],
+                    fluid_temperature[index],
+                    fluid_velocity[index],
+                )
+                / fluid_density[index]
+            )
+            for index, _ in enumerate(fluid_temperature)
+        ]
+
+    if isinstance(fluid_temperature, float) and isinstance(fluid_velocity, float):
+        if fluid_density is None:
+            fluid_density = density_of_water(fluid_temperature + ZERO_CELCIUS_OFFSET)
+
+        return (
+            mass_flow_rate
+            * parasitic_pressure_loss(
+                characteristic_diameter,
+                characteristic_length,
+                fluid_density,
+                fluid_temperature,
+                fluid_velocity,
+            )
+            / fluid_density
+        )
+
+    raise Exception("Fluid temperature and fluid velocity must be of the same type.")
 
 
 def _parse_args(args: list[Any]) -> argparse.Namespace:
@@ -1209,6 +1467,37 @@ def _parse_files(
     return collector_model_assessors, optimisation_parameters, weather_sample, weather
 
 
+def reynolds_number(
+    density: float, dynamic_viscosity: float, flow_speed: float, length_scale: float
+) -> float:
+    """
+    Computes the Reynolds number of the flow.
+
+    :param: density:
+        The density of the fluid, measured in kilograms per meter cubed.
+
+    :param: dynamic_viscosity:
+        The dynamic viscosity, measured in kilograms per meter second.
+
+    :param: flow_speed:
+        The speed of the flow, measured in meters per second.
+
+    :param: length_scale:
+        A characteristic length scale over which Physics in the fluid is occurring.
+
+    :return:
+        The dimensionless Reynolds number.
+
+    """
+
+    return (
+        density  # [kg/m^3]
+        * flow_speed  # [m/s]
+        * length_scale  # [m]
+        / dynamic_viscosity  # [kg/m*s]
+    )
+
+
 def _output_temperature(
     ambient_temperature: float,
     area: float,
@@ -1739,6 +2028,15 @@ def plot_pareto_front(
             how="cross",
         )
 
+        # Compute the average flowrate through the collectors.
+        average_collector_flowrate: float = np.mean(
+            [entry[MASS_FLOW_RATE] for _, entry in herrando_collector_data.iterrows()]
+        )
+        print(
+            "Utilising average Herrando et al. flowrate of "
+            f"{average_collector_flowrate} l/h."
+        )
+
         # Compute the collector thermal performance.
         output_temperatures = {
             collector_params[collector_name := "Collector_name"]: [
@@ -1747,7 +2045,7 @@ def plot_pareto_front(
                     collector_params[AREA],
                     HEAT_CAPACITY_OF_WATER,
                     entry[COLLECTOR_INPUT_TEMPERATURE],
-                    _mass_flow_rate := 200 / 3600,
+                    _mass_flow_rate := average_collector_flowrate / 3600,
                     PerformanceCurve(
                         collector_params["eta_0"],
                         collector_params["alpha_1"],
@@ -1805,7 +2103,103 @@ def plot_pareto_front(
         electrical_performance = pd.DataFrame(electrical_efficiency).mul(
             weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value], axis=0
         )
+
+        # Compute max and min flowrates through the collectors
+        herrando_collector_data[_max_area := "a_max"] = (
+            np.pi * herrando_collector_data[MAXIMUM_DIAMETER] ** 2
+        )
+        herrando_collector_data[_min_area := "a_min"] = (
+            np.pi * herrando_collector_data[MINIMUM_DIAMETER] ** 2
+        )
+
+        max_fluid_velocities = {
+            collector_params[collector_name]: [
+                average_collector_flowrate
+                / (
+                    3600
+                    * collector_params[_min_area]
+                    * density_of_water(entry + ZERO_CELCIUS_OFFSET)
+                )
+                for entry in average_temperature[collector_params[collector_name]]
+            ]
+            for _, collector_params in herrando_collector_data.iterrows()
+        }
+        min_fluid_velocities = {
+            collector_params[collector_name]: [
+                average_collector_flowrate
+                / (
+                    3600
+                    * collector_params[_max_area]
+                    * density_of_water(entry + ZERO_CELCIUS_OFFSET)
+                )
+                for entry in average_temperature[collector_params[collector_name]]
+            ]
+            for _, collector_params in herrando_collector_data.iterrows()
+        }
+
+        # Compute parasitic power losses for the collectors.
+        max_parasitic_power_loss = pd.DataFrame(
+            {
+                collector_params[collector_name]: parasitic_power_loss(
+                    collector_params[MINIMUM_DIAMETER],
+                    collector_params[LENGTH],
+                    None,
+                    average_temperature[collector_params[collector_name]],
+                    max_fluid_velocities[collector_params[collector_name]],
+                    average_collector_flowrate,
+                )
+                for _, collector_params in herrando_collector_data.iterrows()
+            }
+        )
+        min_parasitic_power_loss = pd.DataFrame(
+            {
+                collector_params[collector_name]: parasitic_power_loss(
+                    collector_params[MAXIMUM_DIAMETER],
+                    collector_params[LENGTH],
+                    None,
+                    average_temperature[collector_params[collector_name]],
+                    min_fluid_velocities[collector_params[collector_name]],
+                    average_collector_flowrate,
+                )
+                for _, collector_params in herrando_collector_data.iterrows()
+            }
+        )
+
+        # Parasitic pressure losses used for debugging and not needed for the
+        # calculation.
+        # max_parasitic_pressure_loss = {
+        #     collector_params[collector_name]: parasitic_pressure_loss(
+        #         collector_params[MINIMUM_DIAMETER],
+        #         collector_params[LENGTH],
+        #         None,
+        #         average_temperature[collector_params[collector_name]],
+        #         max_fluid_velocities[collector_params[collector_name]],
+        #     )
+        #     for _, collector_params in herrando_collector_data.iterrows()
+        # }
+        # min_parasitic_pressure_loss = {
+        #     collector_params[collector_name]: parasitic_pressure_loss(
+        #         collector_params[MAXIMUM_DIAMETER],
+        #         collector_params[LENGTH],
+        #         None,
+        #         average_temperature[collector_params[collector_name]],
+        #         min_fluid_velocities[collector_params[collector_name]],
+        #     )
+        #     for _, collector_params in herrando_collector_data.iterrows()
+        # }
+
         electrical_sum = electrical_performance.sum(axis=0)
+
+        # Adjust the electrical performance by the parasitic losses.
+        max_electrical_sum = electrical_sum - min_parasitic_power_loss
+        min_electrical_sum = electrical_sum - max_parasitic_power_loss
+        mean_electrical_sum = ((max_electrical_sum + min_electrical_sum) / 2).mean(
+            axis=0
+        )
+        max_electrical_sum = max_electrical_sum.mean(axis=0)
+        min_electrical_sum = min_electrical_sum.mean(axis=0)
+
+        # Normalise the electrical performance
 
         thermal_performance = (
             HEAT_CAPACITY_OF_WATER
@@ -1817,7 +2211,15 @@ def plot_pareto_front(
         thermal_sum = thermal_performance.sum(axis=0)
 
         herrando_collector_data.index = herrando_collector_data[collector_name]
-        normalised_electrical_sum = electrical_sum / (
+        normalised_electrical_sum = mean_electrical_sum / (
+            herrando_collector_data[AREA]
+            * weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value].sum()
+        )
+        normalised_max_electrical_sum = max_electrical_sum / (
+            herrando_collector_data[AREA]
+            * weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value].sum()
+        )
+        normalised_min_electrical_sum = min_electrical_sum / (
             herrando_collector_data[AREA]
             * weather_and_input_frame[WeatherDataHeader.SOLAR_IRRADIANCE.value].sum()
         )
@@ -1827,10 +2229,19 @@ def plot_pareto_front(
         )
 
         herrando_collector_performance = pd.concat(
-            [normalised_thermal_sum, normalised_electrical_sum], axis=1
+            [
+                normalised_thermal_sum,
+                normalised_electrical_sum,
+                normalised_max_electrical_sum - normalised_min_electrical_sum,
+            ],
+            axis=1,
         )
         herrando_collector_performance.columns = pd.Index(
-            ["normalised_thermal_output", "normalised_electrical_output"]
+            [
+                "normalised_thermal_output",
+                "normalised_electrical_output",
+                "electrical_output_range",
+            ]
         )
         herrando_collector_performance[collector_name] = (
             herrando_collector_performance.index
@@ -1844,23 +2255,38 @@ def plot_pareto_front(
             s=100,
             alpha=1.0,
             # color=un_color_palette.as_hex()[2],
-            palette=sns.color_palette(
-                [
-                    "#FFFFE5",
-                    "#FFF7BC",
-                    "#FEE391",
-                    "#FEC44F",
-                    "#FB9A29",
-                    "#EC7014",
-                    "#CC4C02",
-                    "#993404",
-                    "#662506",
-                ]
+            palette=(
+                palette := sns.color_palette(
+                    [
+                        "#FFFFE5",
+                        "#FFF7BC",
+                        "#FEE391",
+                        "#FEC44F",
+                        "#FB9A29",
+                        "#EC7014",
+                        "#CC4C02",
+                        "#993404",
+                        "#662506",
+                    ]
+                )
             ),
             hue=collector_name,
             marker="D",
             edgecolor="#232323",
         )
+        index: int = 0
+        for _, entry in herrando_collector_performance.iterrows():
+            plt.errorbar(
+                entry["normalised_thermal_output"],
+                entry["normalised_electrical_output"],
+                yerr=entry["electrical_output_range"],
+                elinewidth=3,
+                ls="none",
+                label=None,
+                color=palette.as_hex()[index],
+                ecolor="lightgrey"
+            )
+            index += 1
 
     # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
     plt.xlabel(
@@ -1923,10 +2349,6 @@ def plot_pareto_front(
     )
 
     plt.show()
-
-    import pdb
-
-    pdb.set_trace()
 
     def _generate_tangent_points(
         point: tuple[float, float],
