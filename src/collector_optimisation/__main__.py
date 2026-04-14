@@ -403,6 +403,7 @@ def _load_reference_runs(
     num_iterations: int,
     optimisation_parameters: pd.DataFrame,
     weather_data_sample: pd.DataFrame,
+    weather_sample_filename: str,
 ) -> pd.DataFrame:
     """
     Load the reference runs if these have been computed, and compute if not.
@@ -434,6 +435,9 @@ def _load_reference_runs(
     :param: weather_data_sample
         The weather-data sample to use.
 
+    :param: weather_sample_filename
+        The filename of the weather-data sample.
+
     """
 
     os.makedirs(AUTO_GENERATED, exist_ok=True)
@@ -441,12 +445,14 @@ def _load_reference_runs(
     if os.path.isfile(
         (
             reference_results_filepath := os.path.join(
-                AUTO_GENERATED, f"{model_name}_reference.csv"
+                AUTO_GENERATED,
+                f"{model_name}_{weather_sample_filename.split(".csv")[0]}_reference.csv",
             )
         )
     ):
         return pd.read_csv(reference_results_filepath, index_col=None)
 
+    # Compute the performance of the reference collector.
     reference_model_assessor = CollectorModelAssessor.collector_type_to_wrapper[
         CollectorType(model_name)
     ](
@@ -458,35 +464,27 @@ def _load_reference_runs(
         weighting_calculator=WeightingCalculator(1, 1),
     )
 
-    index_to_results_map: dict[int, Any] = {}
-
-    bayesian_optimisation_thread = BayesianPVTModelOptimiserThread(
-        date_and_time,
-        {
-            key: value
-            for key, value in optimisation_parameters.items()
-            if key == "mass_flow_rate"
-        },
-        reference_model_assessor,
-        index_to_results_map,
-        weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
-        weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
-        weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
-        initial_points=initial_points,
-        num_iterations=num_iterations,
-        run_id=0,
+    _, _electrical_fitness, _thermal_fitness, output_data = (
+        reference_model_assessor.unweighted_fitness_function(
+            4.642857,
+            -1,
+            weather_data_sample[WeatherDataHeader.SOLAR_IRRADIANCE.value],
+            weather_data_sample[WeatherDataHeader.AMBIENT_TEMPERATURE.value],
+            weather_data_sample[WeatherDataHeader.WIND_SPEED.value],
+        )
     )
 
-    # Start and join the thread
-    bayesian_optimisation_thread.start()
-    bayesian_optimisation_thread.join()
+    (
+        reference_results := pd.DataFrame(
+            {
+                "electrical_fitness": [_electrical_fitness],
+                "thermal_fitness": [_thermal_fitness],
+                "mass_flow_rate": [list(output_data.values())[0].mass_flow_rate],
+            }
+        )
+    ).to_csv(reference_results_filepath)
 
-    # Rename the results and return them.
-    os.rename(
-        f"runs_data_{date_and_time.date}_{date_and_time.time}.csv",
-        reference_results_filepath,
-    )
-    return pd.read_csv(reference_results_filepath, index_col=None)
+    return reference_results
 
 
 def _parse_args(args: list[Any]) -> argparse.Namespace:
@@ -1694,6 +1692,10 @@ def plot_pareto_front(
         color="grey",
     )
 
+    reference_collector_runs["fitness"] = (
+        reference_collector_runs["electrical_fitness"]
+        + reference_collector_runs["thermal_fitness"]
+    )
     reference_collector_runs["normalised_electrical_fitness"] = (
         reference_collector_runs["electrical_fitness"]
         / (max_electrical_efficiency * energy_input)
@@ -2021,11 +2023,13 @@ def plot_pareto_front(
 
     # plt.plot(thermal_values, electrical_values, "--", label="Maximum obtainable power")
     plt.xlabel(
-        r"Normalised thermal energy produced ($f_\mathrm{th}$) / kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
+        r"Normalised thermal energy produced ($f_\mathrm{th}$) / "
+        r"kWh$_\mathrm{th}$/kWh$_\mathrm{in}$",
         fontsize=7,
     )
     plt.ylabel(
-        r"Normalised electrical energy produced ($f_\mathrm{el}$) / kWh$_\mathrm{el}$/kWh$_\mathrm{in}$",
+        r"Normalised electrical energy produced ($f_\mathrm{el}$) / "
+        r"kWh$_\mathrm{el}$/kWh$_\mathrm{in}$",
         fontsize=7,
     )
     handles, _ = plt.gca().get_legend_handles_labels()
@@ -2037,7 +2041,7 @@ def plot_pareto_front(
         fontsize=7,
     )
     plt.xlim(0, 1)
-    plt.ylim(0, 0.25)
+    plt.ylim(0, 0.2)
 
     (ax1 := plt.gca()).legend(
         handles[:8],
@@ -2051,7 +2055,7 @@ def plot_pareto_front(
         handles[8:],
         _[len(labels) + 1 :],
         ncol=1,
-        loc="lower left",
+        loc="upper right",
         fontsize=7,
         labelspacing=1.1,
         ncols=2,
@@ -2218,7 +2222,7 @@ def plot_pareto_front(
         axis.legend().remove()
         sns.despine(offset=10)
         axis.set_xlim(0, 1)
-        axis.set_ylim(0, 1)
+        axis.set_ylim(0, 0.2)
         axis.set_xlabel(None)
         axis.set_ylabel(None)
         axis.set_xticklabels(axis.get_xticklabels(), fontdict={"size": 7})
@@ -2274,6 +2278,12 @@ def plot_pareto_front(
     )
 
     plt.show()
+
+    import pdb
+
+    pdb.set_trace()
+
+    # Plot a flattened out Pareto front.
 
     # Plot the variation of the design parameters across the Pareto front.
     design_variables = [
@@ -2835,6 +2845,8 @@ def main(unparsed_args: list[Any]) -> None:
         weather_sample_size=parsed_args.weather_sample_size,
     )
 
+    weather_data_sample = weather_data_sample.dropna()
+
     reference_collector_runs = _load_reference_runs(
         base_collector_filepath,
         base_model_input_filepaths,
@@ -2845,6 +2857,7 @@ def main(unparsed_args: list[Any]) -> None:
         parsed_args.num_iterations,
         optimisation_parameters,
         weather_data_sample,
+        parsed_args.weather_sample_filename,
     )
 
     # Parse the weightings information
